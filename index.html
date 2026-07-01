@@ -109,9 +109,21 @@
             <strong>Captura:</strong> <span id="gnssTime">--</span>
           </div>
         </div>
+
+        <!-- Gráfico de convergência -->
+        <div id="gnssChartWrap" class="gnss-chart-wrap hidden">
+          <canvas id="gnssChart" width="320" height="80" aria-label="Gráfico de convergência da precisão"></canvas>
+          <div class="gnss-stats">
+            <small>Amostras válidas: <span id="gnssSamples">0</span></small>
+            <small>Descartadas: <span id="gnssDiscarded">0</span></small>
+            <small>Precisão média: <span id="gnssAvgAcc">--</span></small>
+            <small>Status: <span id="gnssStable">aguardando</span></small>
+          </div>
+        </div>
+
         <div class="row">
-          <button type="button" class="btn btn-primary" id="captureBtn">📍 Capturar coordenada</button>
-          <button type="button" class="btn btn-secondary" id="watchBtn">📈 Monitorar</button>
+          <button type="button" class="btn btn-primary" id="captureBtn">📍 Captura rápida</button>
+          <button type="button" class="btn btn-secondary" id="fineBtn">🎯 Captura fina (média)</button>
           <button type="button" class="btn btn-ghost" id="stopWatchBtn">Parar</button>
           <button type="button" class="btn btn-ghost" id="manualCoordBtn">✏️ Manual</button>
         </div>
@@ -222,6 +234,29 @@
           <button type="button" class="btn btn-secondary" id="requestPersistBtn">Solicitar persistência</button>
           <button type="button" class="btn btn-danger" id="wipeBtn">Apagar todos os dados</button>
         </div>
+      </div>
+      <div class="card">
+        <h3>GNSS — Captura fina</h3>
+        <p class="hint">Ajuste os parâmetros da média ponderada usada na captura fina.</p>
+        <div class="grid-2">
+          <div>
+            <label for="setSamples">Amostras mínimas</label>
+            <input type="number" id="setSamples" min="3" max="50" value="8" />
+          </div>
+          <div>
+            <label for="setMaxAcc">Precisão máxima aceita (m)</label>
+            <input type="number" id="setMaxAcc" min="1" max="100" value="30" />
+          </div>
+          <div>
+            <label for="setTargetAcc">Precisão-alvo para estável (m)</label>
+            <input type="number" id="setTargetAcc" min="1" max="50" value="10" />
+          </div>
+          <div>
+            <label for="setDuration">Duração máxima (s)</label>
+            <input type="number" id="setDuration" min="10" max="120" value="30" />
+          </div>
+        </div>
+        <button type="button" class="btn btn-primary" id="saveGnssBtn">Salvar parâmetros</button>
       </div>
       <div class="card">
         <h3>Sobre</h3>

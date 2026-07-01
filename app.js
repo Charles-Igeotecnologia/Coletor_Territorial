@@ -445,9 +445,37 @@ const FieldRenderer = (() => {
 })();
 
 /* ------------------------------------------------------------
-   6. GNSS
+   6. GNSS — Captura rápida + Captura fina (média ponderada)
    ------------------------------------------------------------ */
 const GNSS = (() => {
+
+  // Config padrão (sobrescrito pelas Settings)
+  const cfg = {
+    minSamples: 8,        // amostras válidas mínimas para finalizar
+    maxAcc: 30,           // descarta leituras com precisão > maxAcc
+    targetAcc: 10,        // consideramos "estável" quando média <= targetAcc
+    maxDurationMs: 30000, // duração máxima da coleta fina
+    outlierDist: 75       // distância (m) acima da qual uma leitura é outlier
+  };
+
+  // Estado da captura fina
+  let fine = {
+    running: false,
+    samples: [],      // [{lat, lon, acc, alt, ts}]
+    discarded: 0,
+    startedAt: 0,
+    timer: null,
+    raf: null
+  };
+
+  async function loadConfig() {
+    try {
+      const s = await DB.getSetting('gnssConfig');
+      if (s) Object.assign(cfg, s);
+    } catch {}
+    return cfg;
+  }
+
   function setDisplay(coord) {
     if (!coord) {
       document.getElementById('gnssLat').textContent = '--';
@@ -469,9 +497,9 @@ const GNSS = (() => {
     document.querySelector('.gnss-card').className = 'card gnss-card ' + cls.cardCls;
 
     if (cls.label === 'Baixa') {
-      UI.toast('Precisão baixa. Aguarde estabilização do sinal antes de salvar.', 'warn');
+      UI.toast('Precisão baixa. Use "Captura fina" para melhorar.', 'warn');
     } else if (cls.label === 'Regular') {
-      UI.toast('Precisão regular. Considere aguardar para melhor precisão.', 'warn');
+      UI.toast('Precisão regular. Considere a captura fina.', 'warn');
     }
   }
 
@@ -488,6 +516,7 @@ const GNSS = (() => {
     };
   }
 
+  // ---------- Captura rápida (única) ----------
   function captureOnce() {
     if (!('geolocation' in navigator)) {
       UI.toast('Geolocalização não suportada neste navegador.', 'err');
@@ -511,31 +540,246 @@ const GNSS = (() => {
     );
   }
 
-  function startWatch() {
+  // ---------- Distância haversine (m) ----------
+  function haversine(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const toRad = (d) => d * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat/2)**2 +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
+  // ---------- Cálculo do resultado médio ----------
+  function computeAverage(samples) {
+    if (!samples.length) return null;
+    // pesos = 1/acc (mais preciso = maior peso)
+    let wSum = 0, latSum = 0, lonSum = 0, altSum = 0, altW = 0;
+    const accs = [];
+    samples.forEach(s => {
+      const w = 1 / Math.max(s.acc, 1);
+      wSum += w;
+      latSum += s.lat * w;
+      lonSum += s.lon * w;
+      accs.push(s.acc);
+      if (s.alt !== null && s.alt !== undefined) { altSum += s.alt * w; altW += w; }
+    });
+    const lat = latSum / wSum;
+    const lon = lonSum / wSum;
+    // precisão estimada da média: média das acc / sqrt(N)
+    const meanAcc = accs.reduce((a,b)=>a+b,0) / accs.length;
+    const avgAcc = meanAcc / Math.sqrt(samples.length);
+    const alt = altW > 0 ? altSum / altW : null;
+    // desvio-padrão das coordenadas (m) — medida de dispersão
+    let varSum = 0;
+    samples.forEach(s => {
+      const d = haversine(lat, lon, s.lat, s.lon);
+      varSum += d * d;
+    });
+    const stdMeters = Math.sqrt(varSum / samples.length);
+
+    return {
+      lat, lon,
+      acc: avgAcc,
+      alt, altAcc: null,
+      ts: Utils.nowISO(),
+      source: 'gnss-avg',
+      samples: samples.length,
+      meanRawAcc: meanAcc,
+      stdMeters,
+      sampleRange: samples
+    };
+  }
+
+  // ---------- Gráfico de convergência ----------
+  function drawChart() {
+    const canvas = document.getElementById('gnssChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+
+    // fundo
+    ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--card').trim() || '#fff';
+    ctx.fillRect(0, 0, W, H);
+
+    if (fine.samples.length === 0) {
+      ctx.fillStyle = '#999';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Aguardando leituras...', W/2, H/2);
+      return;
+    }
+
+    // Escala Y: de 0 até maxAcc (inverso — menor precisão no topo é ruim, no fundo é bom)
+    const maxAcc = cfg.maxAcc;
+    const pad = 8;
+
+    // Linha-alvo
+    const yTarget = H - pad - (cfg.targetAcc / maxAcc) * (H - 2*pad);
+    ctx.strokeStyle = '#1b8e3f';
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(pad, yTarget); ctx.lineTo(W - pad, yTarget);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#1b8e3f';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`alvo ${cfg.targetAcc}m`, pad + 2, yTarget - 2);
+
+    // Pontos das precisões individuais (cinza)
+    const xStep = (W - 2*pad) / Math.max(fine.samples.length + fine.discarded - 1, 1);
+    let xi = 0;
+    fine.samples.forEach((s, i) => {
+      const x = pad + i * xStep;
+      const y = H - pad - (Math.min(s.acc, maxAcc) / maxAcc) * (H - 2*pad);
+      ctx.fillStyle = '#9a9a92';
+      ctx.beginPath();
+      ctx.arc(x, y, 2, 0, 2*Math.PI);
+      ctx.fill();
+    });
+
+    // Linha da precisão média acumulada (verde)
+    ctx.strokeStyle = '#178a55';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const accum = [];
+    const validSorted = [];
+    for (let i = 0; i < fine.samples.length; i++) {
+      validSorted.push(fine.samples[i]);
+      const avg = computeAverage(validSorted);
+      if (avg) {
+        const x = pad + i * xStep;
+        const y = H - pad - (Math.min(avg.acc, maxAcc) / maxAcc) * (H - 2*pad);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+    ctx.lineWidth = 1;
+
+    // Eixo Y rótulos
+    ctx.fillStyle = '#6b6b6b';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${maxAcc}m`, pad + 14, pad + 6);
+    ctx.fillText('0m', pad + 10, H - pad);
+  }
+
+  function updateFineStats() {
+    const valid = fine.samples.length;
+    const avg = computeAverage(fine.samples);
+    document.getElementById('gnssSamples').textContent = valid;
+    document.getElementById('gnssDiscarded').textContent = fine.discarded;
+    document.getElementById('gnssAvgAcc').textContent = avg ? `${avg.acc.toFixed(1)} m` : '--';
+
+    const stableEl = document.getElementById('gnssStable');
+    stableEl.className = '';
+    if (!avg) {
+      stableEl.textContent = 'aguardando'; stableEl.className = 'stable-wait';
+    } else if (avg.acc <= cfg.targetAcc && valid >= Math.max(5, cfg.minSamples - 3)) {
+      stableEl.textContent = '✓ estável'; stableEl.className = 'stable-ok';
+    } else if (valid < cfg.minSamples) {
+      stableEl.textContent = `coletando (${valid}/${cfg.minSamples})`; stableEl.className = 'stable-wait';
+    } else {
+      stableEl.textContent = 'precisão acima do alvo'; stableEl.className = 'stable-bad';
+    }
+    drawChart();
+  }
+
+  // ---------- Captura fina ----------
+  function startFine() {
     if (!('geolocation' in navigator)) {
       UI.toast('Geolocalização não suportada.', 'err'); return;
     }
-    if (State.watchId !== null) return;
+    if (fine.running) return;
+
+    fine = { running: true, samples: [], discarded: 0, startedAt: Date.now(), timer: null, raf: null };
+    document.getElementById('gnssChartWrap').classList.remove('hidden');
+    updateFineStats();
+    UI.toast(`Captura fina iniciada — aguarde coletar ${cfg.minSamples} amostras...`);
+
     State.watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        State.currentCoord = fromPosition(pos);
-        setDisplay(State.currentCoord);
-      },
+      (pos) => onFineSample(fromPosition(pos)),
       (err) => {
-        console.error({ msg: err.message, context: 'GNSS.watch' });
-        UI.toast('Falha no monitoramento GNSS.', 'err');
+        console.error({ msg: err.message, context: 'GNSS.fine.watch' });
+        UI.toast('Falha no GNSS durante captura fina.', 'err');
         stopWatch();
       },
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 1000 }
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
-    UI.toast('Monitorando sinal GNSS...', 'ok');
+
+    // Timer de duração máxima
+    fine.timer = setTimeout(() => {
+      if (fine.running) {
+        UI.toast('Tempo máximo atingido. Finalizando com as amostras disponíveis.', 'warn');
+        finishFine(true);
+      }
+    }, cfg.maxDurationMs);
+  }
+
+  function onFineSample(reading) {
+    if (!fine.running) return;
+    // Filtro 1: precisão máxima
+    if (reading.acc === null || reading.acc === undefined || reading.acc > cfg.maxAcc) {
+      fine.discarded++;
+      updateFineStats();
+      return;
+    }
+    // Filtro 2: outlier por distância em relação ao centróide atual (se já houver amostras)
+    if (fine.samples.length >= 3) {
+      const avg = computeAverage(fine.samples);
+      const d = haversine(avg.lat, avg.lon, reading.lat, reading.lon);
+      if (d > cfg.outlierDist) {
+        fine.discarded++;
+        updateFineStats();
+        return;
+      }
+    }
+    fine.samples.push(reading);
+    updateFineStats();
+
+    // Atualiza display com o resultado médio atual
+    const avg = computeAverage(fine.samples);
+    if (avg) {
+      State.currentCoord = avg;
+      setDisplay(avg);
+    }
+
+    // Condição de finalização antecipada: amostras mínimas + precisão-alvo atingida
+    if (fine.samples.length >= cfg.minSamples && avg && avg.acc <= cfg.targetAcc) {
+      finishFine(false);
+    }
+  }
+
+  function finishFine(timedOut) {
+    if (!fine.running) return;
+    fine.running = false;
+    clearTimeout(fine.timer);
+    stopWatch();
+
+    const avg = computeAverage(fine.samples);
+    if (!avg || fine.samples.length < 3) {
+      UI.toast(`Captura fina sem amostras suficientes (${fine.samples.length} válidas). Tente novamente em local aberto.`, 'err');
+      return;
+    }
+    // Preserva o resultado como coordenada atual já com sample info
+    State.currentCoord = avg;
+    setDisplay(avg);
+    let msg = `Captura fina finalizada: ${avg.acc.toFixed(1)} m (média de ${fine.samples.length} amostras`;
+    if (avg.stdMeters !== undefined) msg += `, dispersão ${avg.stdMeters.toFixed(1)}m`;
+    msg += ').';
+    UI.toast(msg, timedOut ? 'warn' : 'ok');
   }
 
   function stopWatch() {
     if (State.watchId !== null) {
       navigator.geolocation.clearWatch(State.watchId);
       State.watchId = null;
-      UI.toast('Monitoramento encerrado.');
+    }
+    if (fine.running) {
+      finishFine(false);
     }
   }
 
@@ -547,7 +791,7 @@ const GNSS = (() => {
       UI.toast('Coordenada manual inválida. Verifique os limites.', 'err');
       return;
     }
-    const original = State.currentCoord && State.currentCoord.source === 'gnss'
+    const original = State.currentCoord && State.currentCoord.source.startsWith('gnss')
       ? { ...State.currentCoord } : (State.currentCoord?.manualOverride?.original || null);
 
     State.currentCoord = {
@@ -566,7 +810,15 @@ const GNSS = (() => {
     UI.toast('Coordenada manual aplicada.', 'ok');
   }
 
-  return { captureOnce, startWatch, stopWatch, applyManual, setDisplay };
+  function getConfig() { return { ...cfg }; }
+
+  async function saveConfig(partial) {
+    Object.assign(cfg, partial);
+    await DB.setSetting('gnssConfig', cfg);
+  }
+
+  return { captureOnce, startFine, stopWatch, applyManual, setDisplay,
+           loadConfig, getConfig, saveConfig };
 })();
 
 /* ------------------------------------------------------------
@@ -1052,6 +1304,8 @@ const App = {
       this.showProtocolInfo();
       this.maybeRequestPersist();
       this.updateStorageInfo();
+      await GNSS.loadConfig();
+      this.populateGnssSettings();
 
       window.addEventListener('online', () => this.showConnStatus());
       window.addEventListener('offline', () => this.showConnStatus());
@@ -1069,12 +1323,25 @@ const App = {
 
     // GNSS
     document.getElementById('captureBtn').addEventListener('click', () => GNSS.captureOnce());
-    document.getElementById('watchBtn').addEventListener('click', () => GNSS.startWatch());
+    document.getElementById('fineBtn').addEventListener('click', () => GNSS.startFine());
     document.getElementById('stopWatchBtn').addEventListener('click', () => GNSS.stopWatch());
     document.getElementById('manualCoordBtn').addEventListener('click', () => {
       document.getElementById('manualCoord').classList.toggle('hidden');
     });
     document.getElementById('applyManualBtn').addEventListener('click', () => GNSS.applyManual());
+
+    // GNSS settings
+    document.getElementById('saveGnssBtn').addEventListener('click', async () => {
+      const partial = {
+        minSamples: Math.max(3, parseInt(document.getElementById('setSamples').value, 10) || 8),
+        maxAcc: Math.max(1, parseFloat(document.getElementById('setMaxAcc').value) || 30),
+        targetAcc: Math.max(1, parseFloat(document.getElementById('setTargetAcc').value) || 10),
+        maxDurationMs: (Math.max(10, parseInt(document.getElementById('setDuration').value, 10) || 30)) * 1000
+      };
+      await GNSS.saveConfig(partial);
+      this.populateGnssSettings();
+      UI.toast('Parâmetros GNSS salvos.', 'ok');
+    });
 
     // Coleta
     document.getElementById('collectForm').addEventListener('submit', (e) => { e.preventDefault(); this.saveRecord(); });
@@ -1231,6 +1498,12 @@ const App = {
         format: 'graus decimais',
         source: coord.source || 'gnss'
       };
+      // Metadados de captura fina (média), quando aplicável
+      if (coord.source === 'gnss-avg') {
+        record.gnss.samples = coord.samples || null;
+        record.gnss.stdMeters = coord.stdMeters ?? null;
+        record.gnss.meanRawAccuracy = coord.meanRawAcc ?? null;
+      }
       if (coord.manualOverride) record.gnss.manualOverride = coord.manualOverride;
       if (coord.original) record.gnss.original = coord.original;
       record.geometry = { type: 'Point', coordinates: [coord.lon, coord.lat] };
@@ -1440,6 +1713,15 @@ const App = {
     } else {
       el.textContent = 'Indisponível neste navegador.';
     }
+  },
+
+  populateGnssSettings() {
+    const c = GNSS.getConfig();
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+    set('setSamples', c.minSamples);
+    set('setMaxAcc', c.maxAcc);
+    set('setTargetAcc', c.targetAcc);
+    set('setDuration', Math.round(c.maxDurationMs / 1000));
   }
 };
 

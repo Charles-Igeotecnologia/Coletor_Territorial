@@ -165,30 +165,67 @@ Agora sim, colete os dados. Siga este fluxo para **cada ponto**:
 
 1. Abra o app pelo **ícone** na tela inicial
 2. Vá para a aba **Coleta** (📍)
-3. Clique em **📍 Capturar coordenada**
+3. Escolha o modo de captura (ver 4.2 abaixo):
+   - **📍 Captura rápida** — uma única leitura, ideal para pontos de baixa criticidade
+   - **🎯 Captura fina** — média de várias leituras, para máxima precisão (recomendado)
 4. Observe a **precisão** exibida:
    - 🟢 **Excelente** (0-5 m) — ideal, pode salvar
    - 🟢 **Boa** (5-10 m) — boa, pode salvar
-   - 🟡 **Regular** (10-25 m) — aceitável, considere aguardar
-   - 🔴 **Baixa** (>25 m) — **aguarde** e capture novamente
+   - 🟡 **Regular** (10-25 m) — aceitável, considere usar captura fina
+   - 🔴 **Baixa** (>25 m) — **use captura fina** ou aguarde
 5. Preencha os campos do formulário
 6. Clique em **💾 Salvar registro**
 7. O formulário é limpo para o próximo ponto
 8. Repita
 
-### 4.2 Quando a precisão estiver instável
+### 4.2 Dois modos de captura
 
-Use o **📈 Monitorar** em vez de captura única:
+#### 📍 Captura rápida (uma leitura)
+- Pega uma única posição do GNSS
+- Rápida (segundos)
+- Adequada para pontos de baixa criticidade (referências gerais, observações)
+- Precisão típica: **5–15 m**
 
-1. Clique em **📈 Monitorar**
-2. A aplicação passa a atualizar a coordenada em tempo real
-3. Observe a precisão estabilizar (geralmente melhora após 10-30 segundos)
-4. Quando a precisão estiver boa, clique em **Parar**
-5. Continue preenchendo e salvando
+#### 🎯 Captura fina (média ponderada) — **recomendada**
+- Coleta múltiplas leituras (padrão: 8 amostras válidas)
+- **Filtra outliers** automaticamente (leituras absurdas são descartadas)
+- Calcula **média ponderada** por precisão (leituras mais precisas pesam mais)
+- A precisão final **diminui com o número de amostras** (√N)
+- Mostra **gráfico de convergência** em tempo real
+- Finaliza automaticamente quando atinge a precisão-alvo (padrão: 10 m)
+- Precisão típica: **3–6 m** em condições razoáveis
 
-> 💡 Dica: em áreas com pouca visão do céu (dentro de mata, próximo a prédios), o sinal demora mais para estabilizar. Tenha paciência.
+**Quando usar cada modo:**
 
-### 4.3 Se o GNSS falhar completamente
+| Situação | Modo recomendado |
+|---|---|
+| Caminhada rápida, muitos pontos, baixa criticidade | 📍 Captura rápida |
+| Pontos de cadastro, vistoria oficial, obra | 🎯 Captura fina |
+| Precisão vindo "Baixa" ou "Regular" | 🎯 Captura fina |
+| Área com sinal ruim (mata, próximo a prédios) | 🎯 Captura fina |
+
+### 4.3 Como funciona a captura fina (passo a passo)
+
+1. Clique em **🎯 Captura fina (média)**
+2. O app começa a coletar leituras continuamente
+3. Aparece um **gráfico de convergência** mostrando:
+   - Pontos cinzas: precisão de cada leitura individual
+   - Linha verde: precisão da média (vai caindo)
+   - Linha tracejada verde: meta de precisão
+4. Estatísticas em tempo real:
+   - **Amostras válidas** (quantas passaram no filtro)
+   - **Descartadas** (outliers filtrados)
+   - **Precisão média** (atual do resultado)
+   - **Status**: "coletando (5/8)" → "✓ estável"
+5. O app **finaliza automaticamente** quando:
+   - Atinge o número mínimo de amostras **E** a precisão-alvo
+   - **OU** expira o tempo máximo (padrão: 30 s)
+6. O resultado é aplicado como coordenada atual
+7. Continue preenchendo o formulário e salve
+
+> 💡 **Dica de campo:** mantenha o celular parado durante a captura fina. Segure com as duas mãos ou apoie em uma superfície. Movimento prejudica a média.
+
+### 4.4 Quando o GNSS falhar completamente
 
 Para um ponto específico em que o GPS não conseguir precisão:
 
@@ -199,13 +236,33 @@ Para um ponto específico em que o GPS não conseguir precisão:
 
 A coordenada original do GNSS (mesmo parcial) fica **preservada** nos metadados do registro, para auditoria.
 
-### 4.4 Indicadores na tela
+### 4.5 Configurando a captura fina (Ajustes)
+
+Em **⚙️ Ajustes → GNSS — Captura fina**, você pode ajustar:
+
+| Parâmetro | Padrão | O que faz |
+|---|---|---|
+| Amostras mínimas | 8 | Quantas leituras válidas coletar antes de finalizar |
+| Precisão máxima aceita (m) | 30 | Leituras piores que isso são descartadas |
+| Precisão-alvo para estável (m) | 10 | Quando a média atinge isso, finaliza antecipadamente |
+| Duração máxima (s) | 30 | Tempo limite da coleta (finaliza com o que tiver) |
+
+**Receitas sugeridas:**
+
+| Cenário | Amostras | Precisão-alvo | Duração |
+|---|---|---|---|
+| Rápido (andando muito) | 5 | 15 | 20 s |
+| Padrão (equilíbrio) | 8 | 10 | 30 s |
+| Máxima precisão | 15 | 5 | 60 s |
+
+### 4.6 Indicadores na tela
 
 | Indicador | Onde | Significado |
 |---|---|---|
 | ● Online / ○ Offline | Topo direita | Status de conexão |
 | "X registros" | Topo direita | Total coletado nesta sessão |
 | Cor do card GNSS | Tela de Coleta | Verde = bom, Amarelo = regular, Vermelho = baixo |
+| Gráfico de convergência | Tela de Coleta (captura fina) | Mostra a precisão caindo com as amostras |
 
 ---
 
@@ -312,7 +369,7 @@ Informações de ambiente (protocolo, armazenamento), solicitação de persistê
 | **App muito lento** | Muitos registros + fotos | Exporte e faça backup, depois use Ajustes → Apagar dados (faça backup do formulário antes re-salvando) |
 | **Dados desapareceram** | Modo anônimo, ou "limpar dados ao sair" | Use sempre o app instalado (PWA), nunca o navegador em modo anônimo |
 | **Não consigo editar o formulário** | Campo em uso em registros antigos | O sistema versiona o schema; registros antigos ficam marcados. Crie um novo formulário se necessário. |
-| **iOS: GNSS demora muito** | Safari mais lento que Chrome | Use **📈 Monitorar** em vez de captura única. Aguarde estabilizar. |
+| **iOS: GNSS demora muito** | Safari mais lento que Chrome | Use **🎯 Captura fina** (mais confiável no iOS). Aguarde estabilizar. |
 | **Exportação Shapefile falha** | Biblioteca não carregou (offline sem cache) | Volte online, abra a tela Export, aguarde 30s. Ou use GeoJSON e converta no QGIS. |
 | **Botão não responde** | JavaScript com erro | Feche o app completamente, abra novamente. Se persistir, reporte o erro. |
 
@@ -340,6 +397,20 @@ Sim. Aba **Dados** → botão ✏️ no registro. Ou no **Mapa**, clique no pont
 
 ### A coordenada está em qual sistema?
 **EPSG:4326** (WGS84, graus decimais) — o padrão do GPS e dos principais SIG. Não há conversão para SIRGAS/UTM nesta versão (faça no QGIS se necessário).
+
+### Qual a precisão real que consigo?
+Depende do modo de captura e das condições:
+
+| Modo | Condições ideais | Condições ruins (mata, prédios) |
+|---|---|---|
+| 📍 Captura rápida | 5–10 m | 15–50 m |
+| 🎯 Captura fina (8 amostras) | 3–6 m | 8–20 m |
+| 🎯 Captura fina (15 amostras) | 2–5 m | 6–15 m |
+
+A **captura fina** melhora a precisão pela média de várias leituras (a incerteza cai com √N) e pelo filtro de outliers. Mas ela **não substitui** receptor RTK externo, que dá precisão centimétrica.
+
+### O registro mostra quantas amostras foram usadas?
+Sim. Ao usar captura fina, o registro guarda metadados no campo `gnss`: número de amostras (`samples`), dispersão (`stdMeters`) e precisão média bruta (`meanRawAccuracy`). Estes dados aparecem no GeoJSON exportado e podem ser auditados.
 
 ### Como instalei uma versão antiga — como atualizar?
 Basta acessar o endereço novamente no navegador. O Service Worker atualiza automaticamente na próxima visita. Se necessário, limpe o cache do navegador.
