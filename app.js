@@ -67,6 +67,29 @@ const Utils = {
     }
     used.add(candidate);
     return candidate;
+  },
+
+  /** Lê largura/altura de um arquivo de imagem (via Object URL temporário). */
+  imageDimensions(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve({ width: img.naturalWidth, height: img.naturalHeight }); };
+      img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+      img.src = url;
+    });
+  },
+
+  /** Calcula a caixa delimitadora (N/S/L/O) a partir de um world file (6 linhas: A,D,B,E,C,F). */
+  parseWorldFile(text, width, height) {
+    const nums = text.trim().split(/\r?\n/).map(Number);
+    if (nums.length < 6 || nums.some(n => !Number.isFinite(n))) return null;
+    const [A, , , E, C, F] = nums; // assume imagem sem rotação (D=B≈0)
+    const west = C - A / 2;
+    const north = F - E / 2;
+    const east = west + width * A;
+    const south = north + height * E;
+    return { north, south, east, west };
   }
 };
 
@@ -75,7 +98,7 @@ const Utils = {
    ------------------------------------------------------------ */
 const DB = (() => {
   const DB_NAME = 'ColetorTerritorialDB';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   let _db = null;
 
   function open() {
@@ -95,6 +118,9 @@ const DB = (() => {
         }
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'key' });
+        }
+        if (!db.objectStoreNames.contains('imagery')) {
+          db.createObjectStore('imagery', { keyPath: 'id' });
         }
       };
       req.onsuccess = () => { _db = req.result; resolve(_db); };
@@ -150,15 +176,27 @@ const DB = (() => {
     return reqToPromise(tx('settings', 'readwrite').put({ key, value }));
   }
 
+  // IMAGERY (basemap local offline)
+  async function putImagery(img) {
+    return reqToPromise(tx('imagery', 'readwrite').put(img));
+  }
+  async function getAllImagery() {
+    return reqToPromise(tx('imagery').getAll());
+  }
+  async function deleteImagery(id) {
+    return reqToPromise(tx('imagery', 'readwrite').delete(id));
+  }
+
   async function wipeAll() {
     await reqToPromise(tx('records', 'readwrite').clear());
     await reqToPromise(tx('forms', 'readwrite').clear());
     await reqToPromise(tx('attachments', 'readwrite').clear());
+    await reqToPromise(tx('imagery', 'readwrite').clear());
   }
 
   return { open, putForm, getForm, getAllForms, deleteForm,
            putRecord, getRecord, getAllRecords, deleteRecord,
-           getSetting, setSetting, wipeAll };
+           getSetting, setSetting, putImagery, getAllImagery, deleteImagery, wipeAll };
 })();
 
 /* ------------------------------------------------------------
@@ -207,9 +245,10 @@ const UI = (() => {
     // Recarrega conteúdo dinâmico ao entrar em cada tela
     if (name === 'records') App.renderRecords();
     if (name === 'map') App.refreshMap();
-    if (name === 'collect') App.renderCollectFields();
+    if (name === 'collect') { App.renderCollectFields(); CollectPreview.init(); }
     if (name === 'form') App.renderFieldsList();
     if (name === 'export') App.renderExportOptions();
+    if (name === 'settings') App.renderImageryList();
   }
 
   return { toast, confirmDialog, switchScreen };
@@ -226,6 +265,8 @@ const State = {
   map: null,
   mapMarkersLayer: null,
   editingRecordId: null,
+  miniMap: null,
+  miniMapMarker: null,
 };
 
 /* ------------------------------------------------------------
@@ -337,9 +378,9 @@ const FormBuilder = (() => {
             ${opt}
           </div>
           <div class="actions">
-            <button class="icon-btn" data-act="up" data-id="${f.id}" aria-label="Subir">▲</button>
-            <button class="icon-btn" data-act="down" data-id="${f.id}" aria-label="Descer">▼</button>
-            <button class="icon-btn" data-act="del" data-id="${f.id}" aria-label="Remover">✕</button>
+            <button class="icon-btn" data-act="up" data-id="${f.id}" aria-label="Subir"><svg class="icon"><use href="#icon-chevron-up"/></svg></button>
+            <button class="icon-btn" data-act="down" data-id="${f.id}" aria-label="Descer"><svg class="icon"><use href="#icon-chevron-down"/></svg></button>
+            <button class="icon-btn danger" data-act="del" data-id="${f.id}" aria-label="Remover"><svg class="icon"><use href="#icon-x"/></svg></button>
           </div>
         </div>`;
     }).join('');
@@ -485,6 +526,7 @@ const GNSS = (() => {
       document.getElementById('gnssTime').textContent = '--';
       document.getElementById('gnssAccClass').textContent = '';
       document.querySelector('.gnss-card').className = 'card gnss-card';
+      CollectPreview.update(null);
       return;
     }
     const cls = Utils.classifyAccuracy(coord.acc);
@@ -495,6 +537,7 @@ const GNSS = (() => {
     document.getElementById('gnssTime').textContent = Utils.fmtDateTime(coord.ts);
     document.getElementById('gnssAccClass').textContent = `(${cls.label})`;
     document.querySelector('.gnss-card').className = 'card gnss-card ' + cls.cardCls;
+    CollectPreview.update(coord);
 
     if (cls.label === 'Baixa') {
       UI.toast('Precisão baixa. Use "Captura fina" para melhorar.', 'warn');
@@ -679,7 +722,7 @@ const GNSS = (() => {
     if (!avg) {
       stableEl.textContent = 'aguardando'; stableEl.className = 'stable-wait';
     } else if (avg.acc <= cfg.targetAcc && valid >= Math.max(5, cfg.minSamples - 3)) {
-      stableEl.textContent = '✓ estável'; stableEl.className = 'stable-ok';
+      stableEl.textContent = 'estável'; stableEl.className = 'stable-ok';
     } else if (valid < cfg.minSamples) {
       stableEl.textContent = `coletando (${valid}/${cfg.minSamples})`; stableEl.className = 'stable-wait';
     } else {
@@ -854,6 +897,109 @@ const Validation = (() => {
 })();
 
 /* ------------------------------------------------------------
+   7b. Basemap — camadas base (ruas, satélite online, imagens locais)
+   ------------------------------------------------------------ */
+const Basemap = (() => {
+  const objectUrls = new Map(); // imageryId -> object URL (Blob), reutilizável entre mapas
+
+  function osmLayer() {
+    return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap',
+      maxZoom: 19
+    });
+  }
+
+  function satelliteLayer() {
+    // Esri World Imagery — gratuito para exibição em apps web. Ordem de tile: {z}/{y}/{x}.
+    // Só funciona online (não é pré-cacheado pelo Service Worker, mesma política do OSM/README).
+    return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles © Esri — Fonte: Esri, Maxar, Earthstar Geographics',
+      maxZoom: 19
+    });
+  }
+
+  function referenceLabelsLayer() {
+    // Camada de referência (rótulos, vias, limites) do Esri — usada por cima do satélite p/ formar o "Híbrido".
+    return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles © Esri',
+      maxZoom: 19,
+      pane: 'overlayPane'
+    });
+  }
+
+  function hybridLayer() {
+    // Satélite + rótulos combinados num único L.layerGroup, tratado como uma camada base só.
+    return L.layerGroup([satelliteLayer(), referenceLabelsLayer()]);
+  }
+
+  function imageryObjectUrl(img) {
+    if (!objectUrls.has(img.id)) {
+      objectUrls.set(img.id, URL.createObjectURL(img.blob));
+    }
+    return objectUrls.get(img.id);
+  }
+
+  function revokeImagery(id) {
+    if (objectUrls.has(id)) {
+      URL.revokeObjectURL(objectUrls.get(id));
+      objectUrls.delete(id);
+    }
+  }
+
+  function revokeAll() {
+    objectUrls.forEach(u => URL.revokeObjectURL(u));
+    objectUrls.clear();
+  }
+
+  /** Monta o dicionário de camadas base disponíveis (fixas + imagens locais salvas). */
+  async function buildLayers() {
+    const imagery = await DB.getAllImagery();
+    const layers = {
+      osm: { label: 'Ruas (OSM)', icon: 'map', layer: osmLayer() },
+      satellite: { label: 'Satélite (online)', icon: 'satellite', layer: satelliteLayer() },
+      hybrid: { label: 'Híbrido (satélite + rótulos)', icon: 'layers', layer: hybridLayer() }
+    };
+    imagery.forEach(img => {
+      layers[img.id] = {
+        label: img.name,
+        icon: 'image',
+        layer: L.imageOverlay(imageryObjectUrl(img), [
+          [img.bounds.south, img.bounds.west],
+          [img.bounds.north, img.bounds.east]
+        ])
+      };
+    });
+    return layers;
+  }
+
+  async function resolveActiveId(layers) {
+    const activeId = await DB.getSetting('activeBasemapId');
+    return (activeId && layers[activeId]) ? activeId : 'osm';
+  }
+
+  /** Aplica a camada ativa + control de camadas (com ícones) a um mapa Leaflet. */
+  async function applyTo(map) {
+    const layers = await buildLayers();
+    const activeId = await resolveActiveId(layers);
+    layers[activeId].layer.addTo(map);
+
+    const namedLayers = {};
+    Object.values(layers).forEach(v => {
+      const key = `<span class="leaflet-layer-label"><svg class="icon icon-sm"><use href="#icon-${v.icon}"/></svg>${Utils.escapeHtml(v.label)}</span>`;
+      namedLayers[key] = v.layer;
+    });
+    L.control.layers(namedLayers, {}, { collapsed: true }).addTo(map);
+
+    map.on('baselayerchange', (e) => {
+      const found = Object.entries(layers).find(([, v]) => v.layer === e.layer);
+      if (found) DB.setSetting('activeBasemapId', found[0]).catch(() => {});
+    });
+  }
+
+  return { applyTo, imageryObjectUrl, revokeImagery, revokeAll };
+})();
+
+/* ------------------------------------------------------------
    8. Mapa
    ------------------------------------------------------------ */
 const Mapa = (() => {
@@ -863,15 +1009,11 @@ const Mapa = (() => {
     if (initialized) return;
     try {
       State.map = L.map('map', { center: [-3.1, -60.0], zoom: 11 });
-      // Tiles (apenas se online — em offline, pontos aparecem sobre fundo neutro)
-      try {
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© OpenStreetMap',
-          maxZoom: 19
-        }).addTo(State.map);
-      } catch (e) {
-        console.warn('Tile base indisponível; exibindo pontos sem base.');
-      }
+      // Basemap (ruas/satélite/imagem local) — apenas ruas/satélite exigem internet;
+      // em offline sem imagem local carregada, pontos aparecem sobre fundo neutro.
+      Basemap.applyTo(State.map).catch(() => {
+        console.warn('Basemap indisponível; exibindo pontos sem base.');
+      });
       State.mapMarkersLayer = L.layerGroup().addTo(State.map);
       initialized = true;
     } catch (e) {
@@ -904,8 +1046,8 @@ const Mapa = (() => {
         <div><strong>Precisão:</strong> ${record.gnss && record.gnss.accuracy !== null && record.gnss.accuracy !== undefined ? Utils.escapeHtml(record.gnss.accuracy.toFixed(1)) + ' m' : 'N/I'}</div>
         <div><strong>Captura:</strong> ${Utils.escapeHtml(Utils.fmtDateTime(record.gnss?.timestamp || record.createdAt))}</div>
         <div class="row">
-          <button class="btn btn-ghost" data-popup-copy="${lat},${lon}">Copiar</button>
-          <button class="btn btn-secondary" data-popup-edit="${record.recordId}">Editar</button>
+          <button class="btn btn-ghost" data-popup-copy="${lat},${lon}"><svg class="icon icon-sm"><use href="#icon-copy"/></svg>Copiar</button>
+          <button class="btn btn-secondary" data-popup-edit="${record.recordId}"><svg class="icon icon-sm"><use href="#icon-edit-pencil"/></svg>Editar</button>
         </div>
       </div>`;
   }
@@ -978,6 +1120,69 @@ const Mapa = (() => {
   }
 
   return { init, refresh, centerOnMe, fitAll };
+})();
+
+/* ------------------------------------------------------------
+   8b. CollectPreview — miniatura de localização na tela Coleta
+   ------------------------------------------------------------ */
+const CollectPreview = (() => {
+  let initialized = false;
+
+  async function init() {
+    if (initialized) return;
+    const el = document.getElementById('collectMiniMap');
+    if (!el) return;
+    try {
+      State.miniMap = L.map('collectMiniMap', {
+        center: [-3.1, -60.0],
+        zoom: 14,
+        zoomControl: false,
+        attributionControl: false,
+        scrollWheelZoom: false
+      });
+      await Basemap.applyTo(State.miniMap);
+      initialized = true;
+      if (State.currentCoord) update(State.currentCoord);
+    } catch (e) {
+      console.error({ msg: e.message, stack: e.stack, context: 'CollectPreview.init' });
+    }
+  }
+
+  function update(coord) {
+    if (!initialized || !State.miniMap) return;
+    if (!coord || !Utils.isValidCoord(coord.lat, coord.lon)) {
+      if (State.miniMapMarker) { State.miniMapMarker.remove(); State.miniMapMarker = null; }
+      return;
+    }
+    const ll = [coord.lat, coord.lon];
+    if (!State.miniMapMarker) {
+      State.miniMapMarker = L.marker(ll).addTo(State.miniMap);
+    } else {
+      State.miniMapMarker.setLatLng(ll);
+    }
+    State.miniMap.setView(ll, Math.max(State.miniMap.getZoom(), 16));
+  }
+
+  /** Alterna entre a altura padrão e uma versão ampliada da miniatura. */
+  function toggleExpand() {
+    const el = document.getElementById('collectMiniMap');
+    const btn = document.getElementById('miniMapExpandBtn');
+    if (!el) return;
+    const expanded = el.classList.toggle('expanded');
+    if (btn) {
+      btn.querySelector('use').setAttribute('href', expanded ? '#icon-collapse' : '#icon-expand');
+      btn.setAttribute('aria-label', expanded ? 'Reduzir mapa' : 'Ampliar mapa');
+    }
+    // Leaflet precisa recalcular o tamanho depois que o contêiner muda de altura.
+    // invalidateSize() imediato cobre quem tem "reduzir movimento" ativado (sem transição
+    // CSS); o listener de transitionend garante o tamanho final correto quando há animação.
+    if (State.miniMap) State.miniMap.invalidateSize();
+    el.addEventListener('transitionend', () => {
+      if (State.miniMap) State.miniMap.invalidateSize();
+    }, { once: true });
+  }
+
+  return { init, update, toggleExpand };
 })();
 
 /* ------------------------------------------------------------
@@ -1351,6 +1556,9 @@ const App = {
       State.editingRecordId = null;
     });
 
+    // Miniatura de localização (tela Coleta)
+    document.getElementById('miniMapExpandBtn').addEventListener('click', () => CollectPreview.toggleExpand());
+
     // Mapa
     document.getElementById('centerBtn').addEventListener('click', () => Mapa.centerOnMe());
     document.getElementById('fitAllBtn').addEventListener('click', () => Mapa.fitAll());
@@ -1372,6 +1580,7 @@ const App = {
       const ok = await UI.confirmDialog('Apagar TODOS formulários e registros locais? Esta ação é irreversível.', { title: 'Apagar tudo' });
       if (!ok) return;
       await DB.wipeAll();
+      Basemap.revokeAll();
       State.currentForm = null;
       State.draftFields = [];
       document.getElementById('formName').value = '';
@@ -1379,8 +1588,14 @@ const App = {
       FormBuilder.renderList();
       this.refreshTopbar();
       this.populateFormSelectors();
+      this.renderImageryList();
       UI.toast('Dados apagados.', 'ok');
     });
+
+    // Imagem de satélite offline (basemap local)
+    document.getElementById('saveImageryBtn').addEventListener('click', () => this.saveImagery());
+    document.getElementById('imgFile').addEventListener('change', () => this.maybeAutoFillImageryBounds());
+    document.getElementById('imgWorldFile').addEventListener('change', () => this.maybeAutoFillImageryBounds());
   },
 
   bindNav() {
@@ -1602,8 +1817,8 @@ const App = {
           <td>${lo !== undefined ? lo.toFixed(5) : '--'}</td>
           <td>${acc !== null && acc !== undefined ? acc.toFixed(0) + 'm' : '--'}</td>
           <td>
-            <button class="icon-btn" data-edit="${r.recordId}" aria-label="Editar">✏️</button>
-            <button class="icon-btn" data-del="${r.recordId}" aria-label="Excluir">🗑️</button>
+            <button class="icon-btn" data-edit="${r.recordId}" aria-label="Editar"><svg class="icon"><use href="#icon-edit-pencil"/></svg></button>
+            <button class="icon-btn danger" data-del="${r.recordId}" aria-label="Excluir"><svg class="icon"><use href="#icon-trash"/></svg></button>
           </td>
         </tr>`;
       }).join('');
@@ -1618,6 +1833,103 @@ const App = {
   },
 
   refreshMap() { Mapa.refresh(); },
+
+  /** Tenta preencher N/S/L/O automaticamente a partir de imagem + world file (se ambos selecionados). */
+  async maybeAutoFillImageryBounds() {
+    try {
+      const imgFile = document.getElementById('imgFile').files[0];
+      const wldFile = document.getElementById('imgWorldFile').files[0];
+      if (!imgFile || !wldFile) return;
+      const [text, dims] = await Promise.all([wldFile.text(), Utils.imageDimensions(imgFile)]);
+      const bounds = Utils.parseWorldFile(text, dims.width, dims.height);
+      if (!bounds) { UI.toast('Arquivo de referência inválido.', 'warn'); return; }
+      document.getElementById('imgNorth').value = bounds.north.toFixed(7);
+      document.getElementById('imgSouth').value = bounds.south.toFixed(7);
+      document.getElementById('imgEast').value = bounds.east.toFixed(7);
+      document.getElementById('imgWest').value = bounds.west.toFixed(7);
+      UI.toast('Caixa delimitadora preenchida a partir do arquivo de referência.', 'ok');
+    } catch (e) {
+      console.error({ msg: e.message, stack: e.stack, context: 'App.maybeAutoFillImageryBounds' });
+      UI.toast('Não foi possível ler o arquivo de referência.', 'err');
+    }
+  },
+
+  async saveImagery() {
+    try {
+      const name = document.getElementById('imgName').value.trim();
+      const fileInput = document.getElementById('imgFile');
+      const file = fileInput.files[0];
+      if (!name) { UI.toast('Informe um nome para a imagem.', 'err'); return; }
+      if (!file) { UI.toast('Selecione um arquivo de imagem.', 'err'); return; }
+
+      const bounds = {
+        north: parseFloat(document.getElementById('imgNorth').value),
+        south: parseFloat(document.getElementById('imgSouth').value),
+        east: parseFloat(document.getElementById('imgEast').value),
+        west: parseFloat(document.getElementById('imgWest').value)
+      };
+      const cornersValid = Utils.isValidCoord(bounds.north, bounds.east) && Utils.isValidCoord(bounds.south, bounds.west);
+      if (!cornersValid || bounds.north <= bounds.south || bounds.east <= bounds.west) {
+        UI.toast('Caixa delimitadora inválida. Confira Norte/Sul/Leste/Oeste.', 'err');
+        return;
+      }
+
+      await DB.putImagery({
+        id: Utils.uid('img'),
+        name,
+        createdAt: Utils.nowISO(),
+        blob: file,
+        bounds
+      });
+
+      document.getElementById('imgName').value = '';
+      fileInput.value = '';
+      document.getElementById('imgWorldFile').value = '';
+      ['imgNorth', 'imgSouth', 'imgEast', 'imgWest'].forEach(id => { document.getElementById(id).value = ''; });
+
+      UI.toast('Imagem salva. Escolha-a no seletor de camadas da tela Mapa.', 'ok');
+      this.renderImageryList();
+    } catch (e) {
+      console.error({ msg: e.message, stack: e.stack, context: 'App.saveImagery' });
+      UI.toast('Erro ao salvar imagem.', 'err');
+    }
+  },
+
+  async renderImageryList() {
+    try {
+      const container = document.getElementById('imageryList');
+      if (!container) return;
+      const imagery = await DB.getAllImagery();
+      if (imagery.length === 0) {
+        container.innerHTML = '<p class="hint">Nenhuma imagem local carregada ainda.</p>';
+        return;
+      }
+      container.innerHTML = imagery.map(img => `
+        <div class="field-item">
+          <div class="meta">
+            <strong>${Utils.escapeHtml(img.name)}</strong>
+            <small>N ${img.bounds.north.toFixed(4)} · S ${img.bounds.south.toFixed(4)} · L ${img.bounds.east.toFixed(4)} · O ${img.bounds.west.toFixed(4)}</small>
+          </div>
+          <div class="actions">
+            <button class="icon-btn danger" data-del-imagery="${img.id}" aria-label="Excluir imagem"><svg class="icon"><use href="#icon-trash"/></svg></button>
+          </div>
+        </div>`).join('');
+
+      container.querySelectorAll('[data-del-imagery]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const ok = await UI.confirmDialog('Excluir esta imagem local? Ela deixará de aparecer como opção de basemap.', { title: 'Excluir imagem' });
+          if (!ok) return;
+          const id = btn.dataset.delImagery;
+          await DB.deleteImagery(id);
+          Basemap.revokeImagery(id);
+          UI.toast('Imagem excluída.', 'ok');
+          this.renderImageryList();
+        });
+      });
+    } catch (e) {
+      console.error({ msg: e.message, stack: e.stack, context: 'App.renderImageryList' });
+    }
+  },
 
   async populateFormSelectors() {
     try {
@@ -1772,7 +2084,7 @@ const UpdateBanner = {
     const el = document.createElement('div');
     el.className = 'update-banner';
     el.setAttribute('role', 'alert');
-    el.innerHTML = '<span>🔄 Nova versão disponível.</span>';
+    el.innerHTML = '<span><svg class="icon"><use href="#icon-refresh-cw"/></svg> Nova versão disponível.</span>';
     const btn = document.createElement('button');
     btn.textContent = 'Atualizar';
     btn.addEventListener('click', () => {

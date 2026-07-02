@@ -24,6 +24,10 @@ O GNSS (`navigator.geolocation`) **só funciona em HTTPS** ou em `localhost`. Em
 
 ### Opção A — desenvolvimento local
 
+**Atalho rápido (Windows):** dê duplo-clique em [`iniciar.bat`](./iniciar.bat) — ele inicia o servidor local e abre o app no navegador automaticamente. Mantenha a janela aberta enquanto usa o app.
+
+Ou manualmente:
+
 ```bash
 # Python (se instalado)
 python -m http.server 8080
@@ -34,6 +38,12 @@ python -m http.server 8080
 # Node.js
 npx serve .
 ```
+
+> ⚠️ **Nunca abra `index.html` direto pelo Explorer/Finder (protocolo `file://`).**
+> O app usa um script ES module (`type="module"`), que os navegadores bloqueiam
+> em `file://` por política de CORS — nenhum botão vai responder. O GNSS e o
+> Service Worker também exigem HTTPS ou `localhost`, e não funcionam em
+> `file://`. É sempre necessário um servidor local ou hospedagem online.
 
 ### Opção B — produção (recomendado)
 
@@ -51,7 +61,7 @@ Depois de carregar a página uma vez online, instale como PWA (menu do navegador
 - **Construtor de formulário dinâmico** com 10 tipos de campo e versionamento de schema.
 - **Coleta offline** com armazenamento em IndexedDB (persistente).
 - **GNSS** com captura única, monitoramento contínuo e entrada manual com preservação da coordenada original.
-- **Mapa Leaflet** com pop-ups dinâmicos baseados nos campos do formulário.
+- **Mapa Leaflet** com pop-ups dinâmicos baseados nos campos do formulário, seletor de camadas base (Ruas, Satélite online e imagens locais) e miniatura de localização na tela de Coleta.
 - **Validação** de campos obrigatórios, coordenadas e tipos numéricos.
 - **Exportação**:
   - **CSV** — UTF-8 com BOM (abre certo no Excel pt-BR), separador configurável.
@@ -75,10 +85,35 @@ A exportação usa `@crmackey/shp-write` (fork mantido do `mapbox/shp-write`, co
 
 Para casos-limite (geometrias mistas, reprojeção complexa), use a exportação GeoJSON e converta no QGIS.
 
+## Basemap de satélite
+
+Duas opções, para dois cenários diferentes:
+
+- **Satélite online** (Esri World Imagery) — disponível no seletor de
+  camadas do mapa (canto superior direito) sempre que houver internet.
+  Igual ao OSM, não é pré-cacheado pelo Service Worker (ver limitações
+  abaixo) — não funciona sem conexão.
+- **Imagem local offline** — em Configurações → "Imagem de satélite
+  offline", carregue uma imagem já baixada (recorte de satélite,
+  ortomosaico de drone etc.) da área que será mapeada. Informe a caixa
+  delimitadora (Norte/Sul/Leste/Oeste) manualmente, ou envie junto um
+  "world file" (`.wld`/`.jgw`/`.pgw`/`.tfw`, exportado pelo QGIS/ArcGIS)
+  para preenchimento automático. A imagem fica salva no IndexedDB do
+  aparelho e funciona 100% offline, aparecendo como opção no seletor de
+  camadas do mapa e na miniatura da tela de Coleta. Só funciona
+  corretamente para imagens sem rotação (norte para cima); múltiplas
+  imagens podem ser salvas e alternadas.
+
 ## Limitações conhecidas
 
 - Sincronização com servidor está fora do escopo desta versão.
-- Tiles de mapa base comerciais (Google/Bing) não são cacheados offline (violam ToS). O mapa funciona sem base, mostrando apenas os pontos coletados.
+- Tiles de mapa base online (OSM e Satélite Esri) não são cacheados
+  offline (política de uso dos provedores, mesma restrição que já valia
+  para Google/Bing). Sem internet, o mapa usa a imagem local carregada
+  (se houver) ou fica sem base, mostrando apenas os pontos coletados.
+- Imagens locais de satélite só suportam orientação norte-para-cima
+  (sem rotação); para casos com rotação, reprojete no QGIS antes de
+  exportar o recorte.
 - Modo anônimo/incógnita do navegador apaga o IndexedDB ao fechar — use a instalação PWA.
 
 ## Versão

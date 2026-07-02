@@ -8,3 +8,6 @@ nul
 
 # Dependências locais (se houver no futuro)
 node_modules/
+
+# Config local de preview/dev tooling
+.claude/

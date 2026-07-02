@@ -9,7 +9,7 @@
 'use strict';
 
 // ⬆️ Incrementar este número a cada release para forçar atualização
-const VERSION = 'coletor-v2.1.0';
+const VERSION = 'coletor-v2.4.0';
 const APP_SHELL = [
   './',
   './index.html',
@@ -17,6 +17,10 @@ const APP_SHELL = [
   './app.js',
   './manifest.webmanifest',
   './favicon.svg',
+  // Fontes auto-hospedadas (IBM Plex Sans/Mono) — pré-cache para uso offline
+  './fonts/IBMPlexSans-Variable.woff2',
+  './fonts/IBMPlexMono-Regular.woff2',
+  './fonts/IBMPlexMono-Medium.woff2',
   // Leaflet CSS + JS (CDN, pré-cache p/ uso offline)
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',

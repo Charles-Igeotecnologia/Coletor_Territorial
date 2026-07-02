@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#0f5e3a" />
+  <meta name="theme-color" content="#00436b" />
   <meta name="description" content="Coletor territorial offline com formulário dinâmico, GNSS e exportação geoespacial." />
   <title>Coletor Territorial</title>
 
@@ -20,10 +20,48 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
+
+  <!-- Sprite de ícones (linha, estilo Calcite). Referenciados via <use href="#icon-x">. -->
+  <svg style="display:none" aria-hidden="true">
+    <defs>
+      <symbol id="icon-layers" viewBox="0 0 24 24"><path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="M2 12l10 5 10-5"/><path d="M2 16l10 5 10-5"/></symbol>
+      <symbol id="icon-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12Z"/><circle cx="12" cy="9" r="2.4"/></symbol>
+      <symbol id="icon-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></symbol>
+      <symbol id="icon-edit-pencil" viewBox="0 0 24 24"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3Z"/><path d="M13.5 6.5l4 4"/></symbol>
+      <symbol id="icon-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+      <symbol id="icon-map" viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/></symbol>
+      <symbol id="icon-target" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3"/><path d="M20 8V5a1 1 0 0 0-1-1h-3"/><path d="M4 16v3a1 1 0 0 0 1 1h3"/><path d="M20 16v3a1 1 0 0 1-1 1h-3"/><circle cx="12" cy="12" r="3"/></symbol>
+      <symbol id="icon-list" viewBox="0 0 24 24"><path d="M9 6h12M9 12h12M9 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01" stroke-width="2.6"/></symbol>
+      <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+      <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M10 11v6M14 11v6"/></symbol>
+      <symbol id="icon-chevron-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
+      <symbol id="icon-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+      <symbol id="icon-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+      <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="icon-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></symbol>
+      <symbol id="icon-file-csv" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M14 3v4h4"/><path d="M8 14h8M8 17h8"/></symbol>
+      <symbol id="icon-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z"/></symbol>
+      <symbol id="icon-vector-square" viewBox="0 0 24 24"><rect x="4" y="4" width="4" height="4"/><rect x="16" y="4" width="4" height="4"/><rect x="4" y="16" width="4" height="4"/><rect x="16" y="16" width="4" height="4"/><path d="M8 6h8M6 8v8M18 8v8M8 18h8"/></symbol>
+      <symbol id="icon-package" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></symbol>
+      <symbol id="icon-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></symbol>
+      <symbol id="icon-shield-check" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 5-3 8-7 9-4-1-7-4-7-9V6l7-3Z"/><path d="M9 12l2 2 4-4"/></symbol>
+      <symbol id="icon-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></symbol>
+      <symbol id="icon-alert-triangle" viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v5"/><circle cx="12" cy="17.6" r=".9" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="icon-alert-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><circle cx="12" cy="16.3" r=".9" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="icon-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><circle cx="12" cy="7.4" r=".9" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="icon-satellite" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><path d="M8.5 15.5a5 5 0 0 1 0-7"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M5.5 18.5a9 9 0 0 1 0-13"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></symbol>
+      <symbol id="icon-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.5"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 16l-5.5-5.5a1 1 0 0 0-1.4 0L4 20"/></symbol>
+      <symbol id="icon-expand" viewBox="0 0 24 24"><path d="M9 3H3v6M15 3h6v6M21 15v6h-6M3 15v6h6"/></symbol>
+      <symbol id="icon-collapse" viewBox="0 0 24 24"><path d="M9 3v6H3M15 3v6h6M21 15h-6v6M3 15h6v6"/></symbol>
+      <symbol id="icon-refresh-cw" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"/><path d="M3 16v4h4"/><path d="M21 8V4h-4"/></symbol>
+      <symbol id="icon-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
+    </defs>
+  </svg>
+
   <!-- Barra superior -->
   <header class="topbar" role="banner">
     <div class="topbar-title">
-      <span class="logo" aria-hidden="true">🗺️</span>
+      <span class="brand-mark" aria-hidden="true"><svg class="icon"><use href="#icon-layers"/></svg></span>
       <h1>Coletor Territorial</h1>
     </div>
     <div class="topbar-status">
@@ -32,253 +70,336 @@
     </div>
   </header>
 
-  <!-- Área principal: telas -->
-  <main id="app" class="app" role="main">
+  <div class="app-shell">
 
-    <!-- TELA: CONFIGURAR FORMULÁRIO -->
-    <section id="screen-form" class="screen" aria-labelledby="title-form">
-      <h2 id="title-form">Configurar Formulário</h2>
-      <p class="hint">Construa os campos que serão preenchidos em campo.</p>
+    <!-- Navegação: barra inferior no celular, rail lateral em telas largas -->
+    <nav class="bottomnav" role="navigation" aria-label="Navegação principal">
+      <button class="navbtn active" data-screen="form" aria-label="Formulário"><svg class="icon"><use href="#icon-layers"/></svg><span>Form</span></button>
+      <button class="navbtn" data-screen="collect" aria-label="Coletar"><svg class="icon"><use href="#icon-pin"/></svg><span>Coleta</span></button>
+      <button class="navbtn" data-screen="map" aria-label="Mapa"><svg class="icon"><use href="#icon-map"/></svg><span>Mapa</span></button>
+      <button class="navbtn" data-screen="records" aria-label="Registros"><svg class="icon"><use href="#icon-list"/></svg><span>Dados</span></button>
+      <button class="navbtn" data-screen="export" aria-label="Exportar"><svg class="icon"><use href="#icon-download"/></svg><span>Export</span></button>
+      <button class="navbtn" data-screen="settings" aria-label="Configurações"><svg class="icon"><use href="#icon-settings"/></svg><span>Ajustes</span></button>
+    </nav>
 
-      <form id="formMeta" class="card">
-        <label for="formName">Nome do formulário</label>
-        <input type="text" id="formName" required placeholder="Ex.: Cadastro Territorial de Campo" />
+    <!-- Área principal: telas -->
+    <main id="app" class="app" role="main">
 
-        <label for="formDesc">Descrição</label>
-        <textarea id="formDesc" rows="2" placeholder="Descrição curta da atividade"></textarea>
-
-        <div class="row">
-          <button type="submit" class="btn btn-primary" id="saveFormMetaBtn">Salvar formulário</button>
-          <button type="button" class="btn btn-ghost" id="loadDemoFormBtn">Carregar exemplo</button>
+      <!-- TELA: CONFIGURAR FORMULÁRIO -->
+      <section id="screen-form" class="screen" aria-labelledby="title-form">
+        <div class="screen-head">
+          <h2 id="title-form">Configurar formulário</h2>
+          <p class="hint">Construa os campos que serão preenchidos em campo.</p>
         </div>
-      </form>
 
-      <div class="card">
-        <h3>Campos</h3>
-        <div id="fieldsList" class="fields-list" aria-live="polite"></div>
+        <form id="formMeta" class="card">
+          <label for="formName">Nome do formulário</label>
+          <input type="text" id="formName" required placeholder="Ex.: Cadastro Territorial de Campo" />
 
-        <details class="add-field">
-          <summary class="btn btn-secondary">+ Adicionar campo</summary>
-          <div class="card-inner">
-            <div class="grid-2">
-              <div>
-                <label for="fLabel">Rótulo</label>
-                <input type="text" id="fLabel" placeholder="Ex.: Nome do local" />
-              </div>
-              <div>
-                <label for="fType">Tipo</label>
-                <select id="fType">
-                  <option value="text">Texto curto</option>
-                  <option value="textarea">Texto longo</option>
-                  <option value="integer">Número inteiro</option>
-                  <option value="decimal">Número decimal</option>
-                  <option value="select">Lista suspensa</option>
-                  <option value="multiselect">Múltipla escolha</option>
-                  <option value="date">Data</option>
-                  <option value="time">Hora</option>
-                  <option value="datetime">Data e hora</option>
-                  <option value="boolean">Sim/Não</option>
+          <label for="formDesc">Descrição</label>
+          <textarea id="formDesc" rows="2" placeholder="Descrição curta da atividade"></textarea>
+
+          <div class="row">
+            <button type="submit" class="btn btn-primary" id="saveFormMetaBtn">Salvar formulário</button>
+            <button type="button" class="btn btn-ghost" id="loadDemoFormBtn">Carregar exemplo</button>
+          </div>
+        </form>
+
+        <div class="card">
+          <h3><svg class="icon icon-sm"><use href="#icon-layers"/></svg>Campos</h3>
+          <div id="fieldsList" class="fields-list" aria-live="polite"></div>
+
+          <details class="add-field">
+            <summary class="btn btn-secondary"><svg class="icon"><use href="#icon-plus"/></svg>Adicionar campo</summary>
+            <div class="card-inner">
+              <div class="grid-2">
+                <div>
+                  <label for="fLabel">Rótulo</label>
+                  <input type="text" id="fLabel" placeholder="Ex.: Nome do local" />
+                </div>
+                <div>
+                  <label for="fType">Tipo</label>
+                  <select id="fType">
+                    <option value="text">Texto curto</option>
+                    <option value="textarea">Texto longo</option>
+                    <option value="integer">Número inteiro</option>
+                    <option value="decimal">Número decimal</option>
+                    <option value="select">Lista suspensa</option>
+                    <option value="multiselect">Múltipla escolha</option>
+                    <option value="date">Data</option>
+                    <option value="time">Hora</option>
+                    <option value="datetime">Data e hora</option>
+                    <option value="boolean">Sim/Não</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="fOptions">Opções (separadas por vírgula)</label>
+                  <input type="text" id="fOptions" placeholder="Escola, Comunidade, Porto" />
+                </div>
+                <div>
+                  <label for="fRequired">Obrigatório</label>
+                  <select id="fRequired">
+                    <option value="false">Não</option>
+                    <option value="true">Sim</option>
+                  </select>
                 </div>
               </div>
+              <button type="button" class="btn btn-primary" id="addFieldBtn">Adicionar à lista</button>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- TELA: COLETAR REGISTRO -->
+      <section id="screen-collect" class="screen hidden" aria-labelledby="title-collect">
+        <div class="screen-head">
+          <h2 id="title-collect">Coletar registro</h2>
+        </div>
+
+        <div class="card gnss-card" aria-live="polite">
+          <div class="gnss-status-row"><svg class="icon icon-sm"><use href="#icon-satellite"/></svg>Posição GNSS</div>
+          <div class="coord-grid">
+            <div class="coord-item">
+              <span class="coord-label">Latitude</span>
+              <span class="coord-value" id="gnssLat">--</span>
+            </div>
+            <div class="coord-item">
+              <span class="coord-label">Longitude</span>
+              <span class="coord-value" id="gnssLon">--</span>
+            </div>
+            <div class="coord-item">
+              <span class="coord-label">Precisão</span>
+              <span><span class="coord-value" id="gnssAcc">--</span><span id="gnssAccClass" class="coord-badge"></span></span>
+            </div>
+            <div class="coord-item">
+              <span class="coord-label">Altitude</span>
+              <span class="coord-value"><span id="gnssAlt">--</span> m</span>
+            </div>
+            <div class="coord-item wide">
+              <span class="coord-label">Captura</span>
+              <span class="coord-value" id="gnssTime">--</span>
+            </div>
+          </div>
+
+          <!-- Gráfico de convergência -->
+          <div id="gnssChartWrap" class="gnss-chart-wrap hidden">
+            <canvas id="gnssChart" width="320" height="80" aria-label="Gráfico de convergência da precisão"></canvas>
+            <div class="gnss-stats">
+              <small>Amostras válidas: <strong id="gnssSamples">0</strong></small>
+              <small>Descartadas: <strong id="gnssDiscarded">0</strong></small>
+              <small>Precisão média: <strong id="gnssAvgAcc">--</strong></small>
+              <small>Status: <strong id="gnssStable">aguardando</strong></small>
+            </div>
+          </div>
+
+          <div class="row">
+            <button type="button" class="btn btn-primary" id="captureBtn"><svg class="icon"><use href="#icon-pin"/></svg>Captura rápida</button>
+            <button type="button" class="btn btn-secondary" id="fineBtn"><svg class="icon"><use href="#icon-crosshair"/></svg>Captura fina</button>
+            <button type="button" class="btn btn-ghost" id="stopWatchBtn"><svg class="icon"><use href="#icon-stop"/></svg>Parar</button>
+            <button type="button" class="btn btn-ghost" id="manualCoordBtn"><svg class="icon"><use href="#icon-edit-pencil"/></svg>Manual</button>
+          </div>
+          <div id="manualCoord" class="manual-coord hidden">
+            <div class="grid-2">
               <div>
-                <label for="fOptions">Opções (separadas por vírgula)</label>
-                <input type="text" id="fOptions" placeholder="Escola, Comunidade, Porto" />
+                <label for="manualLat">Latitude</label>
+                <input type="number" step="any" id="manualLat" placeholder="-3.1019" />
               </div>
               <div>
-                <label for="fRequired">Obrigatório</label>
-                <select id="fRequired">
-                  <option value="false">Não</option>
-                  <option value="true">Sim</option>
-                </select>
+                <label for="manualLon">Longitude</label>
+                <input type="number" step="any" id="manualLon" placeholder="-60.0250" />
               </div>
             </div>
-            <button type="button" class="btn btn-primary" id="addFieldBtn">Adicionar à lista</button>
-          </div>
-        </details>
-      </div>
-    </section>
-
-    <!-- TELA: COLETAR REGISTRO -->
-    <section id="screen-collect" class="screen hidden" aria-labelledby="title-collect">
-      <h2 id="title-collect">Coletar Registro</h2>
-
-      <div class="card gnss-card" aria-live="polite">
-        <div class="gnss-row">
-          <div>
-            <strong>Latitude:</strong> <span id="gnssLat">--</span><br/>
-            <strong>Longitude:</strong> <span id="gnssLon">--</span><br/>
-            <strong>Precisão:</strong> <span id="gnssAcc">--</span> <span id="gnssAccClass"></span><br/>
-            <strong>Altitude:</strong> <span id="gnssAlt">--</span> m<br/>
-            <strong>Captura:</strong> <span id="gnssTime">--</span>
+            <label for="manualReason">Motivo do ajuste manual</label>
+            <input type="text" id="manualReason" placeholder="Ex.: Refinamento sobre foto aérea" />
+            <button type="button" class="btn btn-secondary" id="applyManualBtn">Aplicar coordenada manual</button>
           </div>
         </div>
 
-        <!-- Gráfico de convergência -->
-        <div id="gnssChartWrap" class="gnss-chart-wrap hidden">
-          <canvas id="gnssChart" width="320" height="80" aria-label="Gráfico de convergência da precisão"></canvas>
-          <div class="gnss-stats">
-            <small>Amostras válidas: <span id="gnssSamples">0</span></small>
-            <small>Descartadas: <span id="gnssDiscarded">0</span></small>
-            <small>Precisão média: <span id="gnssAvgAcc">--</span></small>
-            <small>Status: <span id="gnssStable">aguardando</span></small>
-          </div>
+        <div class="card">
+          <h3>
+            <svg class="icon icon-sm"><use href="#icon-map"/></svg>Localização no mapa
+            <button type="button" class="icon-btn h3-action" id="miniMapExpandBtn" aria-label="Ampliar mapa">
+              <svg class="icon"><use href="#icon-expand"/></svg>
+            </button>
+          </h3>
+          <div id="collectMiniMap" class="mini-map" role="application" aria-label="Miniatura da posição atual sobre o basemap"></div>
         </div>
 
-        <div class="row">
-          <button type="button" class="btn btn-primary" id="captureBtn">📍 Captura rápida</button>
-          <button type="button" class="btn btn-secondary" id="fineBtn">🎯 Captura fina (média)</button>
-          <button type="button" class="btn btn-ghost" id="stopWatchBtn">Parar</button>
-          <button type="button" class="btn btn-ghost" id="manualCoordBtn">✏️ Manual</button>
+        <form id="collectForm" class="card">
+          <h3><svg class="icon icon-sm"><use href="#icon-list"/></svg>Atributos</h3>
+          <div id="collectFields" class="fields-render"></div>
+          <div class="row">
+            <button type="submit" class="btn btn-primary" id="saveRecordBtn">Salvar registro</button>
+            <button type="reset" class="btn btn-ghost" id="clearFormBtn">Limpar</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- TELA: MAPA -->
+      <section id="screen-map" class="screen hidden" aria-labelledby="title-map">
+        <div class="screen-head">
+          <h2 id="title-map">Mapa</h2>
         </div>
-        <div id="manualCoord" class="manual-coord hidden">
+        <div class="card filters-card">
           <div class="grid-2">
             <div>
-              <label for="manualLat">Latitude</label>
-              <input type="number" step="any" id="manualLat" placeholder="-3.1019" />
+              <label for="filterForm">Filtrar por formulário</label>
+              <select id="filterForm"><option value="">Todos</option></select>
             </div>
             <div>
-              <label for="manualLon">Longitude</label>
-              <input type="number" step="any" id="manualLon" placeholder="-60.0250" />
+              <label for="filterCat">Filtrar por categoria</label>
+              <select id="filterCat"><option value="">Todas</option></select>
             </div>
           </div>
-          <label for="manualReason">Motivo do ajuste manual</label>
-          <input type="text" id="manualReason" placeholder="Ex.: Refinamento sobre foto aérea" />
-          <button type="button" class="btn btn-secondary" id="applyManualBtn">Aplicar coordenada manual</button>
-        </div>
-      </div>
-
-      <form id="collectForm" class="card">
-        <h3>Atributos</h3>
-        <div id="collectFields" class="fields-render"></div>
-        <div class="row">
-          <button type="submit" class="btn btn-primary" id="saveRecordBtn">💾 Salvar registro</button>
-          <button type="reset" class="btn btn-ghost" id="clearFormBtn">Limpar</button>
-        </div>
-      </form>
-    </section>
-
-    <!-- TELA: MAPA -->
-    <section id="screen-map" class="screen hidden" aria-labelledby="title-map">
-      <h2 id="title-map">Mapa</h2>
-      <div class="card filters-card">
-        <div class="grid-2">
-          <div>
-            <label for="filterForm">Filtrar por formulário</label>
-            <select id="filterForm"><option value="">Todos</option></select>
-          </div>
-          <div>
-            <label for="filterCat">Filtrar por categoria</label>
-            <select id="filterCat"><option value="">Todas</option></select>
+          <div class="row toolbar-row">
+            <button type="button" class="btn btn-secondary" id="centerBtn"><svg class="icon"><use href="#icon-crosshair"/></svg>Centralizar em mim</button>
+            <button type="button" class="btn btn-ghost" id="fitAllBtn"><svg class="icon"><use href="#icon-target"/></svg>Ajustar aos pontos</button>
           </div>
         </div>
-        <div class="row">
-          <button type="button" class="btn btn-secondary" id="centerBtn">🎯 Centralizar em mim</button>
-          <button type="button" class="btn btn-ghost" id="fitAllBtn"> Ajustar aos pontos</button>
-        </div>
-      </div>
-      <div id="map" class="map-container" role="application" aria-label="Mapa dos pontos coletados"></div>
-    </section>
+        <div id="map" class="map-container" role="application" aria-label="Mapa dos pontos coletados"></div>
+      </section>
 
-    <!-- TELA: REGISTROS -->
-    <section id="screen-records" class="screen hidden" aria-labelledby="title-records">
-      <h2 id="title-records">Registros</h2>
-      <div class="card">
-        <label for="searchRecords">Buscar</label>
-        <input type="search" id="searchRecords" placeholder="Buscar por texto..." />
-        <div class="table-wrap">
-          <table id="recordsTable" class="records-table">
-            <thead>
-              <tr>
-                <th>Data</th><th>Formulário</th><th>Local</th><th>Lat</th><th>Lon</th><th>Prec.</th><th>Ações</th>
-              </tr>
-            </thead>
-            <tbody id="recordsBody"></tbody>
-          </table>
+      <!-- TELA: REGISTROS -->
+      <section id="screen-records" class="screen hidden" aria-labelledby="title-records">
+        <div class="screen-head">
+          <h2 id="title-records">Registros</h2>
         </div>
-      </div>
-    </section>
-
-    <!-- TELA: EXPORTAÇÃO -->
-    <section id="screen-export" class="screen hidden" aria-labelledby="title-export">
-      <h2 id="title-export">Exportação</h2>
-      <div class="card">
-        <div class="grid-2">
-          <div>
-            <label for="exportForm">Formulário</label>
-            <select id="exportForm"><option value="">Todos</option></select>
+        <div class="card">
+          <label for="searchRecords">Buscar</label>
+          <div class="search-wrap">
+            <svg class="icon" aria-hidden="true"><use href="#icon-search"/></svg>
+            <input type="search" id="searchRecords" placeholder="Buscar por texto..." />
           </div>
-          <div>
-            <label for="csvSep">Separador CSV</label>
-            <select id="csvSep">
-              <option value=";">Ponto e vírgula (;)</option>
-              <option value=",">Vírgula (,)</option>
-            </select>
+          <div class="table-wrap">
+            <table id="recordsTable" class="records-table">
+              <thead>
+                <tr>
+                  <th>Data</th><th>Formulário</th><th>Local</th><th>Lat</th><th>Lon</th><th>Prec.</th><th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="recordsBody"></tbody>
+            </table>
           </div>
         </div>
-        <div class="row export-buttons">
-          <button type="button" class="btn btn-primary" id="exportCsvBtn">📊 CSV</button>
-          <button type="button" class="btn btn-primary" id="exportKmlBtn">🌍 KML</button>
-          <button type="button" class="btn btn-primary" id="exportGeoJsonBtn">📐 GeoJSON</button>
-          <button type="button" class="btn btn-primary" id="exportShpBtn">🗺️ Shapefile (.zip)</button>
+      </section>
+
+      <!-- TELA: EXPORTAÇÃO -->
+      <section id="screen-export" class="screen hidden" aria-labelledby="title-export">
+        <div class="screen-head">
+          <h2 id="title-export">Exportação</h2>
+        </div>
+        <div class="card">
+          <div class="grid-2">
+            <div>
+              <label for="exportForm">Formulário</label>
+              <select id="exportForm"><option value="">Todos</option></select>
+            </div>
+            <div>
+              <label for="csvSep">Separador CSV</label>
+              <select id="csvSep">
+                <option value=";">Ponto e vírgula (;)</option>
+                <option value=",">Vírgula (,)</option>
+              </select>
+            </div>
+          </div>
+          <div class="export-grid">
+            <button type="button" class="export-tile" id="exportCsvBtn"><svg class="icon icon-lg"><use href="#icon-file-csv"/></svg><strong>CSV</strong><small>Planilha</small></button>
+            <button type="button" class="export-tile" id="exportKmlBtn"><svg class="icon icon-lg"><use href="#icon-globe"/></svg><strong>KML</strong><small>Google Earth</small></button>
+            <button type="button" class="export-tile" id="exportGeoJsonBtn"><svg class="icon icon-lg"><use href="#icon-vector-square"/></svg><strong>GeoJSON</strong><small>SIG</small></button>
+            <button type="button" class="export-tile" id="exportShpBtn"><svg class="icon icon-lg"><use href="#icon-package"/></svg><strong>Shapefile</strong><small>.zip</small></button>
+          </div>
         </div>
         <div id="shpMapping" class="shp-mapping hidden" aria-live="polite"></div>
-      </div>
-    </section>
+      </section>
 
-    <!-- TELA: CONFIGURAÇÕES -->
-    <section id="screen-settings" class="screen hidden" aria-labelledby="title-settings">
-      <h2 id="title-settings">Configurações</h2>
-      <div class="card">
-        <h3>Ambiente</h3>
-        <p><strong>Protocolo:</strong> <span id="protocolInfo">--</span></p>
-        <p><strong>Armazenamento:</strong> <span id="storageInfo">--</span></p>
-        <p><strong>Versão:</strong> 2.0.0</p>
-        <div class="row">
-          <button type="button" class="btn btn-secondary" id="requestPersistBtn">Solicitar persistência</button>
-          <button type="button" class="btn btn-danger" id="wipeBtn">Apagar todos os dados</button>
+      <!-- TELA: CONFIGURAÇÕES -->
+      <section id="screen-settings" class="screen hidden" aria-labelledby="title-settings">
+        <div class="screen-head">
+          <h2 id="title-settings">Configurações</h2>
         </div>
-      </div>
-      <div class="card">
-        <h3>GNSS — Captura fina</h3>
-        <p class="hint">Ajuste os parâmetros da média ponderada usada na captura fina.</p>
-        <div class="grid-2">
-          <div>
-            <label for="setSamples">Amostras mínimas</label>
-            <input type="number" id="setSamples" min="3" max="50" value="8" />
-          </div>
-          <div>
-            <label for="setMaxAcc">Precisão máxima aceita (m)</label>
-            <input type="number" id="setMaxAcc" min="1" max="100" value="30" />
-          </div>
-          <div>
-            <label for="setTargetAcc">Precisão-alvo para estável (m)</label>
-            <input type="number" id="setTargetAcc" min="1" max="50" value="10" />
-          </div>
-          <div>
-            <label for="setDuration">Duração máxima (s)</label>
-            <input type="number" id="setDuration" min="10" max="120" value="30" />
+        <div class="card">
+          <h3><svg class="icon icon-sm"><use href="#icon-info"/></svg>Ambiente</h3>
+          <p><strong>Protocolo:</strong> <span id="protocolInfo">--</span></p>
+          <p><strong>Armazenamento:</strong> <span id="storageInfo">--</span></p>
+          <p><strong>Versão:</strong> 2.0.0</p>
+          <div class="row">
+            <button type="button" class="btn btn-secondary" id="requestPersistBtn"><svg class="icon"><use href="#icon-shield-check"/></svg>Solicitar persistência</button>
+            <button type="button" class="btn btn-danger" id="wipeBtn"><svg class="icon"><use href="#icon-trash"/></svg>Apagar todos os dados</button>
           </div>
         </div>
-        <button type="button" class="btn btn-primary" id="saveGnssBtn">Salvar parâmetros</button>
-      </div>
-      <div class="card">
-        <h3>Sobre</h3>
-        <p>Coletor territorial offline — formulário dinâmico, GNSS do celular, exportação CSV, KML, GeoJSON e Shapefile.</p>
-        <p class="hint">Funciona melhor instalado como PWA em HTTPS. Em HTTP, o GNSS é bloqueado pelos navegadores.</p>
-      </div>
-    </section>
+        <div class="card">
+          <h3><svg class="icon icon-sm"><use href="#icon-satellite"/></svg>GNSS — Captura fina</h3>
+          <p class="hint">Ajuste os parâmetros da média ponderada usada na captura fina.</p>
+          <div class="grid-2">
+            <div>
+              <label for="setSamples">Amostras mínimas</label>
+              <input type="number" id="setSamples" min="3" max="50" value="8" />
+            </div>
+            <div>
+              <label for="setMaxAcc">Precisão máxima aceita (m)</label>
+              <input type="number" id="setMaxAcc" min="1" max="100" value="30" />
+            </div>
+            <div>
+              <label for="setTargetAcc">Precisão-alvo para estável (m)</label>
+              <input type="number" id="setTargetAcc" min="1" max="50" value="10" />
+            </div>
+            <div>
+              <label for="setDuration">Duração máxima (s)</label>
+              <input type="number" id="setDuration" min="10" max="120" value="30" />
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary" id="saveGnssBtn">Salvar parâmetros</button>
+        </div>
+        <div class="card">
+          <h3><svg class="icon icon-sm"><use href="#icon-image"/></svg>Imagem de satélite offline</h3>
+          <p class="hint">Carregue uma imagem de satélite já baixada (recorte georreferenciado) para usar como fundo do mapa sem internet. Ela aparece como opção no seletor de camadas da tela Mapa. Suporta apenas imagens sem rotação (norte para cima).</p>
 
-  </main>
+          <div id="imageryList" class="fields-list" aria-live="polite"></div>
 
-  <!-- Navegação inferior -->
-  <nav class="bottomnav" role="navigation" aria-label="Navegação principal">
-    <button class="navbtn active" data-screen="form" aria-label="Formulário">📝<span>Form</span></button>
-    <button class="navbtn" data-screen="collect" aria-label="Coletar">📍<span>Coleta</span></button>
-    <button class="navbtn" data-screen="map" aria-label="Mapa">🗺️<span>Mapa</span></button>
-    <button class="navbtn" data-screen="records" aria-label="Registros">📋<span>Dados</span></button>
-    <button class="navbtn" data-screen="export" aria-label="Exportar">📤<span>Export</span></button>
-    <button class="navbtn" data-screen="settings" aria-label="Configurações">⚙️<span>Ajustes</span></button>
-  </nav>
+          <details class="add-field">
+            <summary class="btn btn-secondary"><svg class="icon"><use href="#icon-plus"/></svg>Adicionar imagem</summary>
+            <div class="card-inner">
+              <label for="imgName">Nome</label>
+              <input type="text" id="imgName" placeholder="Ex.: Setor Norte - jul/2026" />
+
+              <label for="imgFile">Arquivo de imagem</label>
+              <input type="file" id="imgFile" accept="image/*" />
+
+              <label for="imgWorldFile">Arquivo de referência (opcional: .wld, .jgw, .pgw, .tfw)</label>
+              <input type="file" id="imgWorldFile" accept=".wld,.jgw,.pgw,.tfw,.wor" />
+              <p class="hint">Se enviado, preenche Norte/Sul/Leste/Oeste automaticamente. Sem ele, informe manualmente as coordenadas dos cantos da imagem.</p>
+
+              <div class="grid-2">
+                <div>
+                  <label for="imgNorth">Norte (lat. do topo)</label>
+                  <input type="number" step="any" id="imgNorth" placeholder="-3.05" />
+                </div>
+                <div>
+                  <label for="imgSouth">Sul (lat. da base)</label>
+                  <input type="number" step="any" id="imgSouth" placeholder="-3.15" />
+                </div>
+                <div>
+                  <label for="imgWest">Oeste (lon. esquerda)</label>
+                  <input type="number" step="any" id="imgWest" placeholder="-60.10" />
+                </div>
+                <div>
+                  <label for="imgEast">Leste (lon. direita)</label>
+                  <input type="number" step="any" id="imgEast" placeholder="-59.95" />
+                </div>
+              </div>
+              <button type="button" class="btn btn-primary" id="saveImageryBtn">Salvar imagem</button>
+            </div>
+          </details>
+        </div>
+        <div class="card">
+          <h3><svg class="icon icon-sm"><use href="#icon-layers"/></svg>Sobre</h3>
+          <p>Coletor territorial offline — formulário dinâmico, GNSS do celular, exportação CSV, KML, GeoJSON e Shapefile.</p>
+          <p class="hint">Funciona melhor instalado como PWA em HTTPS. Em HTTP, o GNSS é bloqueado pelos navegadores.</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
 
   <!-- Toast de mensagens -->
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
