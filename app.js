@@ -1858,7 +1858,7 @@ const Report = (() => {
     const size = 500;
     const canvas = document.createElement('canvas');
     canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false });
 
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, size, size);
@@ -1914,7 +1914,11 @@ const Report = (() => {
       ctx.fillText(`raio de incerteza ≈ ${acc.toFixed(1)} m`, 12, size - 14);
     }
 
-    return canvas.toDataURL('image/png');
+    // JPEG em vez de PNG: o esquema não tem transparência, e o encoder PNG do
+    // jsPDF gera uma SMask (máscara de canal alfa) mesmo para PNGs opacos —
+    // isso já foi visto travando a decodificação em alguns leitores de PDF.
+    // JPEG não suporta alfa, então elimina essa máscara por completo.
+    return canvas.toDataURL('image/jpeg', 0.92);
   }
 
   function blobToDataURL(blob) {
@@ -1947,7 +1951,7 @@ const Report = (() => {
     try {
       UI.toast('Gerando relatório em PDF...');
       const jsPDFCtor = await loadJsPDF();
-      const doc = new jsPDFCtor({ unit: 'mm', format: 'a4' });
+      const doc = new jsPDFCtor({ unit: 'mm', format: 'a4', compress: true });
       const pageW = 210, marginX = 18;
       let y = 20;
 
@@ -1991,7 +1995,7 @@ const Report = (() => {
       const diagramY = y;
       try {
         const diagramDataUrl = drawLocationDiagram({ acc: record.gnss?.accuracy });
-        doc.addImage(diagramDataUrl, 'PNG', diagramX, diagramY, diagramSize, diagramSize);
+        doc.addImage(diagramDataUrl, 'JPEG', diagramX, diagramY, diagramSize, diagramSize);
         doc.setFontSize(7.5); doc.setTextColor(140);
         const capLines = doc.splitTextToSize('Esquema técnico de localização (sem base cartográfica online)', diagramSize);
         doc.text(capLines, diagramX, diagramY + diagramSize + 4);

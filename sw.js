@@ -9,7 +9,7 @@
 'use strict';
 
 // ⬆️ Incrementar este número a cada release para forçar atualização
-const VERSION = 'coletor-v2.7.0';
+const VERSION = 'coletor-v2.7.1';
 const APP_SHELL = [
   './',
   './index.html',
