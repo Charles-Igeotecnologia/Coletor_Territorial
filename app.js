@@ -90,6 +90,32 @@ const Utils = {
     const east = west + width * A;
     const south = north + height * E;
     return { north, south, east, west };
+  },
+
+  /** Comprime uma foto (File/Blob) via canvas: redimensiona (máx. lado maior) e recodifica como JPEG. */
+  compressImage(file, { maxDim = 1600, quality = 0.7 } = {}) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        let { naturalWidth: width, naturalHeight: height } = img;
+        if (width > maxDim || height > maxDim) {
+          const scale = maxDim / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(url);
+          if (blob) resolve(blob); else reject(new Error('Falha ao comprimir imagem.'));
+        }, 'image/jpeg', quality);
+      };
+      img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+      img.src = url;
+    });
   }
 };
 
@@ -98,7 +124,7 @@ const Utils = {
    ------------------------------------------------------------ */
 const DB = (() => {
   const DB_NAME = 'ColetorTerritorialDB';
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   let _db = null;
 
   function open() {
@@ -106,6 +132,7 @@ const DB = (() => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
       req.onupgradeneeded = (e) => {
         const db = e.target.result;
+        const tx = e.target.transaction;
         if (!db.objectStoreNames.contains('forms')) {
           db.createObjectStore('forms', { keyPath: 'formId' });
         }
@@ -113,8 +140,11 @@ const DB = (() => {
           const r = db.createObjectStore('records', { keyPath: 'recordId' });
           r.createIndex('formId', 'formId', { unique: false });
         }
-        if (!db.objectStoreNames.contains('attachments')) {
-          db.createObjectStore('attachments', { keyPath: 'id' });
+        const attStore = db.objectStoreNames.contains('attachments')
+          ? tx.objectStore('attachments')
+          : db.createObjectStore('attachments', { keyPath: 'id' });
+        if (!attStore.indexNames.contains('recordId')) {
+          attStore.createIndex('recordId', 'recordId', { unique: false });
         }
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'key' });
@@ -167,6 +197,24 @@ const DB = (() => {
     return reqToPromise(tx('records', 'readwrite').delete(recordId));
   }
 
+  // ATTACHMENTS (fotos anexadas a campos do tipo "photo")
+  async function putAttachment(att) {
+    return reqToPromise(tx('attachments', 'readwrite').put(att));
+  }
+  async function getAttachment(id) {
+    return reqToPromise(tx('attachments').get(id));
+  }
+  async function getAttachmentsByRecord(recordId) {
+    return reqToPromise(tx('attachments').index('recordId').getAll(recordId));
+  }
+  async function deleteAttachment(id) {
+    return reqToPromise(tx('attachments', 'readwrite').delete(id));
+  }
+  async function deleteAttachmentsByRecord(recordId) {
+    const atts = await getAttachmentsByRecord(recordId);
+    await Promise.all(atts.map(a => deleteAttachment(a.id)));
+  }
+
   // SETTINGS
   async function getSetting(key) {
     const r = await reqToPromise(tx('settings').get(key));
@@ -196,6 +244,7 @@ const DB = (() => {
 
   return { open, putForm, getForm, getAllForms, deleteForm,
            putRecord, getRecord, getAllRecords, deleteRecord,
+           putAttachment, getAttachment, getAttachmentsByRecord, deleteAttachment, deleteAttachmentsByRecord,
            getSetting, setSetting, putImagery, getAllImagery, deleteImagery, wipeAll };
 })();
 
@@ -274,6 +323,7 @@ const State = {
   livePosition: null,      // {lat, lon, acc} — posição física atual, independente da coordenada capturada p/ o registro
   liveMiniMarker: null,
   liveMiniAccuracy: null,
+  draftPhotos: {},         // fieldId -> {blob?, attachmentId?, previewUrl?, removed?} — fotos em edição na tela Coleta
 };
 
 /* ------------------------------------------------------------
@@ -373,7 +423,7 @@ const FormBuilder = (() => {
       const typeLabel = {
         text:'Texto curto', textarea:'Texto longo', integer:'Inteiro',
         decimal:'Decimal', select:'Lista', multiselect:'Múltipla',
-        date:'Data', time:'Hora', datetime:'Data/hora', boolean:'Sim/Não'
+        date:'Data', time:'Hora', datetime:'Data/hora', boolean:'Sim/Não', photo:'Foto'
       }[f.type] || f.type;
       const opt = (f.options && f.options.length) ? `<small>Opções: ${Utils.escapeHtml(f.options.join(', '))}</small>` : '';
       return `
@@ -437,11 +487,15 @@ const FieldRenderer = (() => {
     arr.forEach(f => {
       const block = document.createElement('div');
       block.className = 'field-block';
-      const labelHtml = `<label for="${f.id}">${Utils.escapeHtml(f.label)} ${f.required ? '<span class="req-dot">*</span>' : ''}</label>`;
+      const labelFor = f.type === 'photo' ? `photoInput_${f.id}` : f.id;
+      const labelHtml = `<label for="${labelFor}">${Utils.escapeHtml(f.label)} ${f.required ? '<span class="req-dot">*</span>' : ''}</label>`;
       let inputHtml = '';
       const val = values[f.id] !== undefined ? Utils.escapeHtml(values[f.id]) : '';
 
       switch (f.type) {
+        case 'photo':
+          inputHtml = PhotoField.fieldHtml(f);
+          break;
         case 'textarea':
           inputHtml = `<textarea id="${f.id}" name="${f.id}" rows="3">${val}</textarea>`;
           break;
@@ -493,7 +547,9 @@ const FieldRenderer = (() => {
   function collectValues(fields, formEl) {
     const values = {};
     fields.forEach(f => {
-      if (f.type === 'multiselect') {
+      if (f.type === 'photo') {
+        values[f.id] = undefined; // tratado à parte pelo PhotoField (ver App.saveRecord)
+      } else if (f.type === 'multiselect') {
         const checked = formEl.querySelectorAll(`input[name="${f.id}"]:checked`);
         values[f.id] = Array.from(checked).map(c => c.value);
       } else {
@@ -512,6 +568,137 @@ const FieldRenderer = (() => {
   }
 
   return { render, collectValues };
+})();
+
+/* ------------------------------------------------------------
+   5b. PhotoField — captura, compressão e pré-visualização de fotos
+   anexadas a campos do tipo "photo" (armazenadas em DB.attachments,
+   referenciadas nos atributos do registro pelo id do anexo).
+   ------------------------------------------------------------ */
+const PhotoField = (() => {
+  function fieldHtml(f) {
+    return `
+      <div class="photo-capture">
+        <input type="file" accept="image/*" capture="environment" id="photoInput_${f.id}" class="hidden" data-photo-input="${f.id}" />
+        <button type="button" class="btn btn-secondary" data-photo-pick="${f.id}">
+          <svg class="icon"><use href="#icon-image"/></svg>Adicionar foto
+        </button>
+        <div class="photo-preview hidden" id="photoPreview_${f.id}">
+          <img alt="Pré-visualização da foto anexada" />
+          <button type="button" class="icon-btn danger" data-photo-remove="${f.id}" aria-label="Remover foto">
+            <svg class="icon"><use href="#icon-x"/></svg>
+          </button>
+        </div>
+      </div>`;
+  }
+
+  /** Delegação única no container de campos — sobrevive à substituição do innerHTML a cada render. */
+  function bindDelegated(container) {
+    container.addEventListener('click', (e) => {
+      const pickBtn = e.target.closest('[data-photo-pick]');
+      if (pickBtn) { document.getElementById(`photoInput_${pickBtn.dataset.photoPick}`)?.click(); return; }
+      const rmBtn = e.target.closest('[data-photo-remove]');
+      if (rmBtn) { remove(rmBtn.dataset.photoRemove); }
+    });
+    container.addEventListener('change', (e) => {
+      const input = e.target.closest('[data-photo-input]');
+      if (!input) return;
+      const file = input.files[0];
+      if (file) onFileSelected(input.dataset.photoInput, file);
+    });
+  }
+
+  async function onFileSelected(fieldId, file) {
+    try {
+      UI.toast('Processando foto...');
+      const blob = await Utils.compressImage(file);
+      const prevAttId = State.draftPhotos[fieldId]?.attachmentId || null;
+      if (State.draftPhotos[fieldId]?.previewUrl) URL.revokeObjectURL(State.draftPhotos[fieldId].previewUrl);
+      State.draftPhotos[fieldId] = { blob, attachmentId: prevAttId, removed: false };
+      showPreview(fieldId, blob);
+      UI.toast('Foto anexada.', 'ok');
+    } catch (e) {
+      console.error({ msg: e.message, stack: e.stack, context: 'PhotoField.onFileSelected' });
+      UI.toast('Não foi possível processar a foto.', 'err');
+    }
+  }
+
+  function showPreview(fieldId, blob) {
+    const wrap = document.getElementById(`photoPreview_${fieldId}`);
+    if (!wrap) return;
+    const url = URL.createObjectURL(blob);
+    if (State.draftPhotos[fieldId]) State.draftPhotos[fieldId].previewUrl = url;
+    wrap.querySelector('img').src = url;
+    wrap.classList.remove('hidden');
+  }
+
+  function remove(fieldId) {
+    const draft = State.draftPhotos[fieldId];
+    if (draft?.previewUrl) URL.revokeObjectURL(draft.previewUrl);
+    State.draftPhotos[fieldId] = { removed: true, attachmentId: draft?.attachmentId || null };
+    const wrap = document.getElementById(`photoPreview_${fieldId}`);
+    if (wrap) { wrap.classList.add('hidden'); wrap.querySelector('img').src = ''; }
+    const input = document.getElementById(`photoInput_${fieldId}`);
+    if (input) input.value = '';
+  }
+
+  /** Marca presença de foto (nova ou já anexada e não removida) em `values`, só para a validação de obrigatoriedade. */
+  function markPresence(fields, values) {
+    fields.forEach(f => {
+      if (f.type !== 'photo') return;
+      const d = State.draftPhotos[f.id];
+      values[f.id] = (d && !d.removed && (d.blob || d.attachmentId)) ? 'photo' : '';
+    });
+  }
+
+  /** Persiste blobs pendentes como anexos e grava o id do anexo em record.attributes; remove os marcados para exclusão. */
+  async function applyToRecord(fields, record) {
+    for (const f of fields) {
+      if (f.type !== 'photo') continue;
+      const draft = State.draftPhotos[f.id];
+      if (!draft) continue; // campo não tocado nesta sessão — mantém o que já estava em record.attributes
+      if (draft.removed) {
+        if (draft.attachmentId) await DB.deleteAttachment(draft.attachmentId);
+        record.attributes[f.id] = null;
+        continue;
+      }
+      if (draft.blob) {
+        const attId = draft.attachmentId || Utils.uid('att');
+        await DB.putAttachment({
+          id: attId, recordId: record.recordId, fieldId: f.id,
+          blob: draft.blob, mime: draft.blob.type || 'image/jpeg', capturedAt: Utils.nowISO()
+        });
+        record.attributes[f.id] = attId;
+      } else if (draft.attachmentId) {
+        record.attributes[f.id] = draft.attachmentId;
+      }
+    }
+  }
+
+  /** Carrega pré-visualização de fotos já anexadas (edição de registro existente). */
+  async function loadFromRecord(fields, attributes) {
+    for (const f of fields) {
+      if (f.type !== 'photo') continue;
+      const attId = attributes?.[f.id];
+      if (!attId) continue;
+      try {
+        const att = await DB.getAttachment(attId);
+        if (!att) continue;
+        State.draftPhotos[f.id] = { attachmentId: attId, removed: false };
+        showPreview(f.id, att.blob);
+      } catch (e) {
+        console.error({ msg: e.message, stack: e.stack, context: 'PhotoField.loadFromRecord' });
+      }
+    }
+  }
+
+  /** Limpa o rascunho de fotos (nova coleta, troca de formulário, cancelar edição). */
+  function reset() {
+    Object.values(State.draftPhotos).forEach(d => { if (d?.previewUrl) URL.revokeObjectURL(d.previewUrl); });
+    State.draftPhotos = {};
+  }
+
+  return { fieldHtml, bindDelegated, markPresence, applyToRecord, loadFromRecord, reset };
 })();
 
 /* ------------------------------------------------------------
@@ -1641,6 +1828,235 @@ const Exporter = (() => {
 })();
 
 /* ------------------------------------------------------------
+   9b. Report — relatório técnico em PDF por registro (nome do local,
+   finalidade/formulário, atributos, foto anexada e esquema de
+   localização com coordenada). Gerado 100% no cliente via jsPDF.
+   ------------------------------------------------------------ */
+const Report = (() => {
+  let jsPDFPromise = null;
+
+  /** Carrega o build UMD do jsPDF via <script> clássico (o build ESM referencia
+   *  specifiers "nus" de @babel/runtime que o navegador não resolve em import()). */
+  function loadJsPDF() {
+    if (window.jspdf?.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+    if (jsPDFPromise) return jsPDFPromise;
+    jsPDFPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js';
+      s.onload = () => {
+        if (window.jspdf?.jsPDF) resolve(window.jspdf.jsPDF);
+        else reject(new Error('jsPDF carregado, mas construtor não encontrado.'));
+      };
+      s.onerror = () => reject(new Error('Falha ao carregar a biblioteca de PDF (sem conexão na primeira vez?).'));
+      document.head.appendChild(s);
+    }).catch(e => { jsPDFPromise = null; throw e; });
+    return jsPDFPromise;
+  }
+
+  /** Desenha um esquema técnico de localização (sem tiles online — evita bloqueio de CORS e funciona 100% offline). */
+  function drawLocationDiagram(gnss) {
+    const size = 500;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, size, size);
+
+    // reticulado técnico
+    ctx.strokeStyle = '#e2e5ea';
+    ctx.lineWidth = 1;
+    const step = size / 10;
+    for (let i = 1; i < 10; i++) {
+      ctx.beginPath(); ctx.moveTo(i * step, 0); ctx.lineTo(i * step, size); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i * step); ctx.lineTo(size, i * step); ctx.stroke();
+    }
+    ctx.strokeStyle = '#9aa1ab';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, size - 2, size - 2);
+
+    const cx = size / 2, cy = size / 2;
+
+    // círculo de precisão (proporcional, ilustrativo — não é escala cartográfica real)
+    const acc = Number.isFinite(gnss?.acc) ? gnss.acc : null;
+    const accPx = acc ? Math.min(Math.max(acc * 2, 40), size * 0.42) : 60;
+    ctx.setLineDash([7, 5]);
+    ctx.strokeStyle = '#0079c1';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, accPx, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // crosshair + ponto central
+    ctx.strokeStyle = '#00436b';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - 26, cy); ctx.lineTo(cx + 26, cy);
+    ctx.moveTo(cx, cy - 26); ctx.lineTo(cx, cy + 26);
+    ctx.stroke();
+    ctx.fillStyle = '#c0392b';
+    ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.stroke();
+
+    // seta norte
+    ctx.strokeStyle = '#1b1f24'; ctx.fillStyle = '#1b1f24'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(size - 34, 44); ctx.lineTo(size - 34, 18);
+    ctx.moveTo(size - 34, 18); ctx.lineTo(size - 40, 28);
+    ctx.moveTo(size - 34, 18); ctx.lineTo(size - 28, 28);
+    ctx.stroke();
+    ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('N', size - 34, 62);
+
+    // rótulo de precisão
+    if (acc) {
+      ctx.font = '13px sans-serif'; ctx.fillStyle = '#0079c1'; ctx.textAlign = 'left';
+      ctx.fillText(`raio de incerteza ≈ ${acc.toFixed(1)} m`, 12, size - 14);
+    }
+
+    return canvas.toDataURL('image/png');
+  }
+
+  function blobToDataURL(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function imageDims(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+  }
+
+  function fileSafeName(s) {
+    return String(s || '')
+      .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+      .replace(/[^A-Za-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 48);
+  }
+
+  async function generate(record, form) {
+    try {
+      UI.toast('Gerando relatório em PDF...');
+      const jsPDFCtor = await loadJsPDF();
+      const doc = new jsPDFCtor({ unit: 'mm', format: 'a4' });
+      const pageW = 210, marginX = 18;
+      let y = 20;
+
+      // Cabeçalho — formulário (finalidade) + nome do local coletado
+      doc.setFontSize(9); doc.setTextColor(120);
+      doc.text(String(form.name || 'Formulário').toUpperCase(), marginX, y);
+      y += 5;
+      if (form.description) {
+        const descLines = doc.splitTextToSize(form.description, pageW - marginX * 2);
+        doc.text(descLines, marginX, y);
+        y += 4.5 * descLines.length + 3;
+      } else {
+        y += 3;
+      }
+      doc.setDrawColor(210); doc.line(marginX, y, pageW - marginX, y);
+      y += 9;
+
+      const firstField = form.fields?.[0];
+      const localName = (firstField && record.attributes?.[firstField.id]) || 'Registro de campo';
+      doc.setFontSize(18); doc.setTextColor(20);
+      const titleLines = doc.splitTextToSize(String(localName), pageW - marginX * 2);
+      doc.text(titleLines, marginX, y);
+      y += 7 * titleLines.length + 2;
+
+      // Metadados de coleta e coordenada
+      const la = record.geometry?.coordinates?.[1];
+      const lo = record.geometry?.coordinates?.[0];
+      doc.setFontSize(10); doc.setTextColor(70);
+      const metaLines = [
+        `Coletado em: ${Utils.fmtDateTime(record.createdAt)}`,
+        `Coordenada: ${Number.isFinite(la) ? la.toFixed(6) : '--'}, ${Number.isFinite(lo) ? lo.toFixed(6) : '--'} (EPSG:4326)`,
+        `Precisão: ${record.gnss?.accuracy != null ? record.gnss.accuracy.toFixed(1) + ' m' : 'N/I'}` +
+          (record.gnss?.altitude != null ? `  •  Altitude: ${record.gnss.altitude.toFixed(1)} m` : '')
+      ];
+      metaLines.forEach(line => { doc.text(line, marginX, y); y += 5.5; });
+      y += 3;
+
+      // Esquema de localização (canto direito)
+      const diagramSize = 55;
+      const diagramX = pageW - marginX - diagramSize;
+      const diagramY = y;
+      try {
+        const diagramDataUrl = drawLocationDiagram({ acc: record.gnss?.accuracy });
+        doc.addImage(diagramDataUrl, 'PNG', diagramX, diagramY, diagramSize, diagramSize);
+        doc.setFontSize(7.5); doc.setTextColor(140);
+        const capLines = doc.splitTextToSize('Esquema técnico de localização (sem base cartográfica online)', diagramSize);
+        doc.text(capLines, diagramX, diagramY + diagramSize + 4);
+      } catch (e) {
+        console.error({ msg: e.message, stack: e.stack, context: 'Report.diagram' });
+      }
+
+      // Atributos do formulário (coluna esquerda, ao lado do esquema)
+      const attrColWidth = diagramX - marginX - 8;
+      doc.setFontSize(11); doc.setTextColor(20);
+      doc.text('Atributos coletados', marginX, y);
+      y += 6;
+      doc.setFontSize(9.5);
+      (form.fields || []).forEach(f => {
+        if (f.type === 'photo') return;
+        const raw = record.attributes?.[f.id];
+        if (raw === undefined || raw === null || raw === '') return;
+        const display = Array.isArray(raw) ? raw.join(', ') : (typeof raw === 'boolean' ? (raw ? 'Sim' : 'Não') : String(raw));
+        doc.setTextColor(20); doc.setFont(undefined, 'bold');
+        doc.text(`${f.label}:`, marginX, y);
+        doc.setTextColor(60); doc.setFont(undefined, 'normal');
+        const lines = doc.splitTextToSize(display, attrColWidth - 30);
+        doc.text(lines, marginX + 30, y);
+        y += 5.2 * Math.max(lines.length, 1);
+      });
+      doc.setFont(undefined, 'normal');
+
+      y = Math.max(y, diagramY + diagramSize + 10) + 4;
+
+      // Foto anexada (se houver)
+      const photoField = (form.fields || []).find(f => f.type === 'photo');
+      if (photoField) {
+        const attId = record.attributes?.[photoField.id];
+        const att = attId ? await DB.getAttachment(attId) : null;
+        if (att?.blob) {
+          const dataUrl = await blobToDataURL(att.blob);
+          const dims = await imageDims(dataUrl);
+          const maxW = pageW - marginX * 2, maxH = 95;
+          let w = maxW, h = w * (dims.height / dims.width);
+          if (h > maxH) { h = maxH; w = h * (dims.width / dims.height); }
+          if (y + h + 12 > 280) { doc.addPage(); y = 20; }
+          doc.setFontSize(11); doc.setTextColor(20);
+          doc.text(photoField.label || 'Evidência fotográfica', marginX, y);
+          y += 5;
+          doc.addImage(dataUrl, 'JPEG', marginX, y, w, h);
+          y += h + 6;
+        }
+      }
+
+      // Rodapé
+      doc.setFontSize(7.5); doc.setTextColor(150);
+      doc.text(`Gerado por Coletor Territorial em ${Utils.fmtDateTime(Utils.nowISO())} • ID: ${record.recordId}`, marginX, 290);
+
+      doc.save(`relatorio_${fileSafeName(localName) || record.recordId}.pdf`);
+      UI.toast('PDF gerado.', 'ok');
+    } catch (e) {
+      console.error({ msg: e.message, stack: e.stack, context: 'Report.generate' });
+      UI.toast(e.message || 'Erro ao gerar o PDF.', 'err');
+    }
+  }
+
+  return { generate };
+})();
+
+/* ------------------------------------------------------------
    10. App — orquestra tudo
    ------------------------------------------------------------ */
 const App = {
@@ -1745,7 +2161,9 @@ const App = {
       State.currentCoord = null;
       GNSS.setDisplay(null);
       State.editingRecordId = null;
+      this.renderCollectFields();
     });
+    PhotoField.bindDelegated(document.getElementById('collectFields'));
 
     // Miniatura de localização (tela Coleta)
     document.getElementById('miniMapExpandBtn').addEventListener('click', () => CollectPreview.toggleExpand());
@@ -1852,6 +2270,7 @@ const App = {
   },
 
   renderCollectFields() {
+    PhotoField.reset();
     if (!State.currentForm) {
       document.getElementById('collectFields').innerHTML =
         '<p class="hint">Nenhum formulário configurado. Vá em "Form" para criar.</p>';
@@ -1866,6 +2285,7 @@ const App = {
       if (!form) { UI.toast('Nenhum formulário ativo.', 'err'); return; }
 
       const values = FieldRenderer.collectValues(form.fields, document.getElementById('collectForm'));
+      PhotoField.markPresence(form.fields, values);
       const errors = Validation.validateRecord(form, values, State.currentCoord);
       if (errors.length) {
         UI.toast(errors[0], 'err');
@@ -1893,6 +2313,7 @@ const App = {
 
       record.updatedAt = now;
       record.attributes = values;
+      await PhotoField.applyToRecord(form.fields, record);
       record.gnss = {
         latitude: coord.lat,
         longitude: coord.lon,
@@ -1920,6 +2341,7 @@ const App = {
       document.getElementById('collectForm').reset();
       State.currentCoord = null;
       GNSS.setDisplay(null);
+      this.renderCollectFields();
       this.refreshTopbar();
     } catch (e) {
       console.error({ msg: e.message, stack: e.stack, context: 'App.saveRecord' });
@@ -1951,6 +2373,7 @@ const App = {
 
       UI.switchScreen('collect');
       FieldRenderer.render(State.currentForm.fields, document.getElementById('collectFields'), r.attributes);
+      await PhotoField.loadFromRecord(State.currentForm.fields, r.attributes);
       UI.toast('Editando registro.', 'ok');
     } catch (e) {
       console.error({ msg: e.message, stack: e.stack, context: 'App.startEdit' });
@@ -1963,6 +2386,7 @@ const App = {
     if (!ok) return;
     try {
       await DB.deleteRecord(recordId);
+      await DB.deleteAttachmentsByRecord(recordId);
       UI.toast('Registro excluído.', 'ok');
       this.renderRecords();
       this.refreshTopbar();
@@ -2008,12 +2432,20 @@ const App = {
           <td>${lo !== undefined ? lo.toFixed(5) : '--'}</td>
           <td>${acc !== null && acc !== undefined ? acc.toFixed(0) + 'm' : '--'}</td>
           <td>
+            <button class="icon-btn" data-pdf="${r.recordId}" aria-label="Gerar relatório em PDF"><svg class="icon"><use href="#icon-file-csv"/></svg></button>
             <button class="icon-btn" data-edit="${r.recordId}" aria-label="Editar"><svg class="icon"><use href="#icon-edit-pencil"/></svg></button>
             <button class="icon-btn danger" data-del="${r.recordId}" aria-label="Excluir"><svg class="icon"><use href="#icon-trash"/></svg></button>
           </td>
         </tr>`;
       }).join('');
 
+      tbody.querySelectorAll('[data-pdf]').forEach(b =>
+        b.addEventListener('click', async () => {
+          const r = rows.find(x => x.recordId === b.dataset.pdf);
+          const form = formMap.get(r?.formId);
+          if (!r || !form) { UI.toast('Formulário do registro não encontrado.', 'err'); return; }
+          await Report.generate(r, form);
+        }));
       tbody.querySelectorAll('[data-edit]').forEach(b =>
         b.addEventListener('click', () => this.startEdit(b.dataset.edit)));
       tbody.querySelectorAll('[data-del]').forEach(b =>

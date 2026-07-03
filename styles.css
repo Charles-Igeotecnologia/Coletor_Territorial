@@ -351,6 +351,23 @@ details.add-field > summary::-webkit-details-marker { display: none; }
 
 .manual-coord { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--slate-200); }
 
+/* ---------- Campo de foto (construtor + coleta) ---------- */
+.photo-capture { display: flex; flex-direction: column; gap: var(--space-2); align-items: flex-start; }
+.photo-preview {
+  position: relative;
+  display: inline-block;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--slate-200);
+  box-shadow: var(--shadow-sm);
+}
+.photo-preview img { display: block; max-width: 220px; max-height: 220px; object-fit: cover; }
+.photo-preview .icon-btn {
+  position: absolute; top: 6px; right: 6px;
+  background: rgba(21, 27, 38, .55); color: #fff; border-color: transparent;
+}
+.photo-preview .icon-btn:hover { background: var(--danger-700); color: #fff; }
+
 /* ---------- Renderização dinâmica ---------- */
 .fields-render { display: flex; flex-direction: column; gap: var(--space-1); }
 .fields-render .field-block { margin-bottom: var(--space-1); }
