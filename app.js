@@ -245,8 +245,8 @@ const UI = (() => {
     // Recarrega conteúdo dinâmico ao entrar em cada tela
     if (name === 'records') App.renderRecords();
     if (name === 'map') App.refreshMap();
-    if (name === 'collect') { App.renderCollectFields(); CollectPreview.init(); }
-    if (name === 'form') App.renderFieldsList();
+    if (name === 'collect') { App.renderCollectFields(); CollectPreview.init(); App.populateFormSelectors(); }
+    if (name === 'form') { App.renderFieldsList(); App.populateFormSelectors(); }
     if (name === 'export') App.renderExportOptions();
     if (name === 'settings') App.renderImageryList();
 
@@ -402,7 +402,29 @@ const FormBuilder = (() => {
     });
   }
 
-  return { saveMeta, addField, removeField, moveField, renderList };
+  /** Carrega um formulário salvo no editor (e o torna o formulário ativo). */
+  function loadForm(form) {
+    State.currentForm = form;
+    State.draftFields = JSON.parse(JSON.stringify(form.fields || []));
+    document.getElementById('formName').value = form.name || '';
+    document.getElementById('formDesc').value = form.description || '';
+    renderList();
+    App.refreshTopbar();
+    App.populateFormSelectors();
+  }
+
+  /** Limpa o editor para começar um formulário novo e independente. */
+  function newForm() {
+    State.currentForm = null;
+    State.draftFields = [];
+    document.getElementById('formName').value = '';
+    document.getElementById('formDesc').value = '';
+    renderList();
+    App.refreshTopbar();
+    App.populateFormSelectors();
+  }
+
+  return { saveMeta, addField, removeField, moveField, renderList, loadForm, newForm };
 })();
 
 /* ------------------------------------------------------------
@@ -1665,6 +1687,35 @@ const App = {
     document.getElementById('formMeta').addEventListener('submit', (e) => { e.preventDefault(); FormBuilder.saveMeta(); });
     document.getElementById('addFieldBtn').addEventListener('click', () => FormBuilder.addField());
     document.getElementById('loadDemoFormBtn').addEventListener('click', async () => { await this.seedDemo(); FormBuilder.renderList(); });
+    document.getElementById('newFormBtn').addEventListener('click', () => FormBuilder.newForm());
+    document.getElementById('formSelect').addEventListener('change', async (e) => {
+      try {
+        const formId = e.target.value;
+        if (!formId) { FormBuilder.newForm(); return; }
+        const form = await DB.getForm(formId);
+        if (form) FormBuilder.loadForm(form);
+      } catch (err) {
+        console.error({ msg: err.message, stack: err.stack, context: 'formSelect.change' });
+        UI.toast('Erro ao carregar formulário.', 'err');
+      }
+    });
+    document.getElementById('collectFormSelect').addEventListener('change', async (e) => {
+      try {
+        const formId = e.target.value;
+        if (!formId) { FormBuilder.newForm(); }
+        else {
+          const form = await DB.getForm(formId);
+          if (form) FormBuilder.loadForm(form);
+        }
+        State.editingRecordId = null;
+        State.currentCoord = null;
+        GNSS.setDisplay(null);
+        this.renderCollectFields();
+      } catch (err) {
+        console.error({ msg: err.message, stack: err.stack, context: 'collectFormSelect.change' });
+        UI.toast('Erro ao trocar formulário.', 'err');
+      }
+    });
 
     // GNSS
     document.getElementById('captureBtn').addEventListener('click', () => GNSS.captureOnce());
@@ -2080,6 +2131,21 @@ const App = {
         const el = document.getElementById(id);
         if (el) el.innerHTML = opts;
       });
+
+      // Formulário ativo (edição na tela Form / uso na tela Coleta) — cada
+      // formulário criado passa a aparecer aqui como opção selecionável.
+      const activeId = State.currentForm ? State.currentForm.formId : '';
+      const formOpts = forms.map(f => `<option value="${f.formId}">${Utils.escapeHtml(f.name)}</option>`).join('');
+      const formSelectEl = document.getElementById('formSelect');
+      if (formSelectEl) {
+        formSelectEl.innerHTML = '<option value="">+ Novo formulário</option>' + formOpts;
+        formSelectEl.value = activeId;
+      }
+      const collectSelectEl = document.getElementById('collectFormSelect');
+      if (collectSelectEl) {
+        collectSelectEl.innerHTML = forms.length ? formOpts : '<option value="">Nenhum formulário salvo</option>';
+        collectSelectEl.value = activeId;
+      }
 
       // categoria: primeiros campos select de todos forms
       const catSet = new Set();

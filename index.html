@@ -93,6 +93,9 @@
         </div>
 
         <form id="formMeta" class="card">
+          <label for="formSelect">Formulário</label>
+          <select id="formSelect"></select>
+
           <label for="formName">Nome do formulário</label>
           <input type="text" id="formName" required placeholder="Ex.: Cadastro Territorial de Campo" />
 
@@ -101,6 +104,7 @@
 
           <div class="row">
             <button type="submit" class="btn btn-primary" id="saveFormMetaBtn">Salvar formulário</button>
+            <button type="button" class="btn btn-secondary" id="newFormBtn"><svg class="icon"><use href="#icon-plus"/></svg>Novo formulário</button>
             <button type="button" class="btn btn-ghost" id="loadDemoFormBtn">Carregar exemplo</button>
           </div>
         </form>
@@ -154,6 +158,11 @@
       <section id="screen-collect" class="screen hidden" aria-labelledby="title-collect">
         <div class="screen-head">
           <h2 id="title-collect">Coletar registro</h2>
+        </div>
+
+        <div class="card">
+          <label for="collectFormSelect">Formulário para este trabalho</label>
+          <select id="collectFormSelect"></select>
         </div>
 
         <div class="card gnss-card" aria-live="polite">
