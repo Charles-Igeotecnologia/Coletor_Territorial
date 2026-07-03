@@ -157,7 +157,10 @@
         </div>
 
         <div class="card gnss-card" aria-live="polite">
-          <div class="gnss-status-row"><svg class="icon icon-sm"><use href="#icon-satellite"/></svg>Posição GNSS</div>
+          <div class="gnss-status-row">
+            <svg class="icon icon-sm"><use href="#icon-satellite"/></svg>Posição GNSS
+            <span id="liveTrackBadge" class="badge badge-info hidden"><span class="live-dot-badge" aria-hidden="true"></span>Rastreamento ativo</span>
+          </div>
           <div class="coord-grid">
             <div class="coord-item">
               <span class="coord-label">Latitude</span>
@@ -222,7 +225,7 @@
               <svg class="icon"><use href="#icon-expand"/></svg>
             </button>
           </h3>
-          <div id="collectMiniMap" class="mini-map" role="application" aria-label="Miniatura da posição atual sobre o basemap"></div>
+          <div id="collectMiniMap" class="mini-map" role="application" aria-label="Miniatura com rastreamento ao vivo da sua posição e da coordenada capturada, sobre o basemap"></div>
         </div>
 
         <form id="collectForm" class="card">

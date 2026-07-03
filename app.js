@@ -249,6 +249,9 @@ const UI = (() => {
     if (name === 'form') App.renderFieldsList();
     if (name === 'export') App.renderExportOptions();
     if (name === 'settings') App.renderImageryList();
+
+    // Rastreamento ao vivo: ativo somente durante o processo de coleta em campo
+    if (name === 'collect') LiveTrack.start(); else LiveTrack.stop();
   }
 
   return { toast, confirmDialog, switchScreen };
@@ -267,6 +270,10 @@ const State = {
   editingRecordId: null,
   miniMap: null,
   miniMapMarker: null,
+  liveWatchId: null,       // watchPosition id do rastreamento contínuo em campo
+  livePosition: null,      // {lat, lon, acc} — posição física atual, independente da coordenada capturada p/ o registro
+  liveMiniMarker: null,
+  liveMiniAccuracy: null,
 };
 
 /* ------------------------------------------------------------
@@ -1143,6 +1150,7 @@ const CollectPreview = (() => {
       await Basemap.applyTo(State.miniMap);
       initialized = true;
       if (State.currentCoord) update(State.currentCoord);
+      LiveTrack.sync();
     } catch (e) {
       console.error({ msg: e.message, stack: e.stack, context: 'CollectPreview.init' });
     }
@@ -1183,6 +1191,138 @@ const CollectPreview = (() => {
   }
 
   return { init, update, toggleExpand };
+})();
+
+/* ------------------------------------------------------------
+   8c. LiveTrack — rastreamento contínuo da posição em campo
+   Ativo automaticamente durante a tela de Coleta. Independente da
+   coordenada capturada para o registro (State.currentCoord): mostra
+   onde o usuário está fisicamente agora, em tempo real, sobre a
+   miniatura de mapa local.
+   ------------------------------------------------------------ */
+const LiveTrack = (() => {
+  let warnedOnce = false;
+  let watchdogTimer = null;
+
+  function start() {
+    if (!('geolocation' in navigator)) return;
+    if (State.liveWatchId !== null) return; // já em execução
+    warnedOnce = false;
+    try {
+      State.liveWatchId = navigator.geolocation.watchPosition(onUpdate, onError, {
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 3000
+      });
+      setBadge(true);
+      // Alguns navegadores não disparam sucesso nem erro quando a permissão já
+      // está bloqueada (o `timeout` da PositionOptions não cobre esse caso).
+      // Watchdog evita que o selo fique preso em "ativo" indefinidamente.
+      clearTimeout(watchdogTimer);
+      watchdogTimer = setTimeout(checkStuck, 22000);
+    } catch (e) {
+      console.error({ msg: e.message, stack: e.stack, context: 'LiveTrack.start' });
+    }
+  }
+
+  async function checkStuck() {
+    if (State.liveWatchId === null || State.livePosition) return; // já parado ou já recebeu posição
+    let denied = false;
+    try {
+      if (navigator.permissions?.query) {
+        const status = await navigator.permissions.query({ name: 'geolocation' });
+        denied = status.state === 'denied';
+      }
+    } catch { /* API indisponível — segue como timeout comum */ }
+    if (denied) {
+      stop();
+      UI.toast('Permissão de localização negada — rastreamento contínuo desativado.', 'warn');
+    } else {
+      onError({ code: 3, message: 'Nenhuma posição recebida a tempo.' });
+    }
+  }
+
+  function stop() {
+    clearTimeout(watchdogTimer);
+    if (State.liveWatchId !== null) {
+      navigator.geolocation.clearWatch(State.liveWatchId);
+      State.liveWatchId = null;
+    }
+    if (State.liveMiniMarker)   { try { State.liveMiniMarker.remove(); } catch {} State.liveMiniMarker = null; }
+    if (State.liveMiniAccuracy) { try { State.liveMiniAccuracy.remove(); } catch {} State.liveMiniAccuracy = null; }
+    State.livePosition = null;
+    setBadge(false);
+  }
+
+  function onUpdate(pos) {
+    clearTimeout(watchdogTimer);
+    const c = pos.coords;
+    if (!Utils.isValidCoord(c.latitude, c.longitude)) return;
+    State.livePosition = { lat: c.latitude, lon: c.longitude, acc: c.accuracy };
+    render();
+  }
+
+  function onError(err) {
+    console.error({ msg: err.message, context: 'LiveTrack.watch' });
+    if (err.code === 1) {
+      // Permissão negada: não insistir, e não mostrar o selo como se estivesse ativo.
+      stop();
+      UI.toast('Permissão de localização negada — rastreamento contínuo desativado.', 'warn');
+      return;
+    }
+    if (!warnedOnce) {
+      warnedOnce = true;
+      UI.toast('Não foi possível iniciar o rastreamento contínuo da posição.', 'warn');
+    }
+  }
+
+  /** Redesenha o ponto de rastreamento na miniatura, se já houver posição e mapa prontos. */
+  function render() {
+    if (!State.miniMap || !State.livePosition) return;
+    const { lat, lon, acc } = State.livePosition;
+    const ll = [lat, lon];
+    try {
+      if (!State.liveMiniMarker) {
+        State.liveMiniMarker = L.marker(ll, {
+          icon: L.divIcon({
+            className: 'live-dot-icon',
+            html: '<span class="live-dot"><span class="live-dot-core"></span></span>',
+            iconSize: [20, 20],
+            iconAnchor: [10, 10]
+          }),
+          zIndexOffset: 900,
+          keyboard: false,
+          interactive: false,
+          alt: 'Sua posição atual'
+        }).addTo(State.miniMap);
+      } else {
+        State.liveMiniMarker.setLatLng(ll);
+      }
+      if (Number.isFinite(acc) && acc > 0) {
+        if (!State.liveMiniAccuracy) {
+          State.liveMiniAccuracy = L.circle(ll, {
+            radius: acc, className: 'live-accuracy-circle', interactive: false,
+            color: '#1f8ed1', weight: 1, fillColor: '#1f8ed1', fillOpacity: .12
+          }).addTo(State.miniMap);
+        } else {
+          State.liveMiniAccuracy.setLatLng(ll).setRadius(acc);
+        }
+      }
+      State.miniMap.setView(ll, Math.max(State.miniMap.getZoom(), 16));
+    } catch (e) {
+      console.error({ msg: e.message, stack: e.stack, context: 'LiveTrack.render' });
+    }
+  }
+
+  function setBadge(active) {
+    const el = document.getElementById('liveTrackBadge');
+    if (el) el.classList.toggle('hidden', !active);
+  }
+
+  /** Chamado quando a miniatura é (re)inicializada, para redesenhar a posição já conhecida. */
+  function sync() { render(); }
+
+  return { start, stop, sync };
 })();
 
 /* ------------------------------------------------------------

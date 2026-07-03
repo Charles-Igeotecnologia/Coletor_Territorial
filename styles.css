@@ -408,6 +408,42 @@ details.add-field > summary::-webkit-details-marker { display: none; }
   transition: height .2s ease;
 }
 .mini-map.expanded { height: 380px; }
+
+/* ---------- Rastreamento ao vivo (posição física em campo) ---------- */
+.live-dot-badge {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-600);
+  animation: live-dot-badge-pulse 1.6s ease-in-out infinite;
+}
+.leaflet-div-icon.live-dot-icon { background: transparent; border: none; }
+.live-dot { position: relative; display: block; width: 16px; height: 16px; }
+.live-dot::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background: rgba(31, 142, 209, .28);
+  animation: live-dot-pulse 2s ease-out infinite;
+}
+.live-dot-core {
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--accent-600);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .25);
+}
+@keyframes live-dot-pulse {
+  0%   { transform: scale(.4); opacity: .9; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+@keyframes live-dot-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .35; }
+}
 .leaflet-popup-content { font-size: .88rem; max-height: 260px; overflow: auto; font-family: var(--font-ui); }
 .popup-card h3 { margin: 0 0 6px; font-size: 1rem; color: var(--accent-900); }
 .popup-card hr { border: 0; border-top: 1px solid var(--slate-200); margin: 6px 0; }
@@ -647,4 +683,5 @@ details.add-field > summary::-webkit-details-marker { display: none; }
 /* ---------- Acessibilidade / reduzir movimento ---------- */
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
+  .live-dot::before, .live-dot-badge { animation: none !important; opacity: .5; }
 }
